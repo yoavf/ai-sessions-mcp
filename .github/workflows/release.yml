@@ -21,10 +21,10 @@ jobs:
 
     - name: Build for multiple platforms
       run: |
-        GOOS=darwin GOARCH=amd64 go build -o bin/ai-sessions-mcp-darwin-amd64 ./cmd/server
-        GOOS=darwin GOARCH=arm64 go build -o bin/ai-sessions-mcp-darwin-arm64 ./cmd/server
-        GOOS=linux GOARCH=amd64 go build -o bin/ai-sessions-mcp-linux-amd64 ./cmd/server
-        GOOS=windows GOARCH=amd64 go build -o bin/ai-sessions-mcp-windows-amd64.exe ./cmd/server
+        GOOS=darwin GOARCH=amd64 go build -o bin/ai-sessions-mcp-darwin-amd64 ./cmd/ai-sessions-mcp
+        GOOS=darwin GOARCH=arm64 go build -o bin/ai-sessions-mcp-darwin-arm64 ./cmd/ai-sessions-mcp
+        GOOS=linux GOARCH=amd64 go build -o bin/ai-sessions-mcp-linux-amd64 ./cmd/ai-sessions-mcp
+        GOOS=windows GOARCH=amd64 go build -o bin/ai-sessions-mcp-windows-amd64.exe ./cmd/ai-sessions-mcp
 
     - name: Create Release
       uses: softprops/action-gh-release@v1

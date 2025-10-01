@@ -1,6 +1,6 @@
 # AI Sessions MCP Server
 
-A Model Context Protocol (MCP) server that provides access to your AI assistant CLI sessions from Claude Code, Gemini CLI, OpenAI Codex, and Cursor CLI.
+A Model Context Protocol (MCP) server that provides access to your AI assistant CLI sessions from Claude Code, Gemini CLI, and OpenAI Codex.
 
 *Mostly written by Claude Code.*
 
@@ -20,7 +20,6 @@ The server reads session files stored locally by various CLI tools:
 - **Claude Code**: `~/.claude/projects/[PROJECT_DIR]/*.jsonl`
 - **Gemini CLI**: `~/.gemini/tmp/[PROJECT_HASH]/chats/session-*.json`
 - **OpenAI Codex**: `~/.codex/sessions/` and `~/.codex/archived_sessions/`
-- **Cursor CLI**: Not yet implemented (placeholder included)
 
 When you ask Claude to list or search sessions, it automatically uses these tools to access your session history.
 
@@ -33,7 +32,7 @@ Shows which AI CLI tools have sessions on your system.
 Lists recent sessions from all projects (newest first).
 
 **Arguments**:
-- `tool` (optional): Filter by `claude`, `gemini`, `codex`, or `cursor`
+- `tool` (optional): Filter by `claude`, `gemini`, or `codex`
 - `project_path` (optional): Filter by specific project directory
 - `limit` (optional): Max results (default: 10)
 

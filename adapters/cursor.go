@@ -5,7 +5,15 @@ import (
 )
 
 // CursorAdapter is a placeholder for Cursor CLI sessions.
-// TODO: Implement once Cursor CLI session format is determined.
+//
+// Cursor stores sessions in SQLite databases with binary/compressed blobs:
+// ~/.cursor/chats/[PROJECT_HASH]/[SESSION_ID]/store.db
+//
+// Structure:
+// - meta table: hex-encoded JSON metadata (agentId, name, createdAt, etc.)
+// - blobs table: hash-addressed binary/compressed conversation data
+//
+// Implementation blocked on understanding Cursor's compression/serialization format.
 type CursorAdapter struct{}
 
 // NewCursorAdapter creates a new Cursor CLI session adapter.

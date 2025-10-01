@@ -65,14 +65,38 @@ Retrieves full session content with pagination.
 - Go 1.25 or later
 - One or more AI CLI tools installed with existing sessions
 
-### Build
+### Build from Source
 
 ```bash
 cd ai-sessions-mcp
 go build -o bin/ai-sessions-mcp ./cmd/server
 ```
 
+### Install with `go install`
+
+Go's equivalent to `npx` is `go install` (installs to `$GOPATH/bin`):
+
+```bash
+go install github.com/yoavf/ai-sessions-mcp/cmd/server@latest
+```
+
+Then use `~/go/bin/server` as the command in your Claude Desktop config (or add `~/go/bin` to your PATH).
+
 ### Configure Claude Desktop
+
+**Option 1: Using Claude Code CLI (easiest)**
+
+If you built from source:
+```bash
+claude mcp add ai-sessions /full/path/to/ai-sessions-mcp/bin/ai-sessions-mcp
+```
+
+If you installed with `go install`:
+```bash
+claude mcp add ai-sessions ~/go/bin/server
+```
+
+**Option 2: Manual configuration**
 
 Add to your Claude Desktop config file:
 

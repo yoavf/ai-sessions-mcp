@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    - name: Build for multiple platforms
+      run: |
+        GOOS=darwin GOARCH=amd64 go build -o bin/ai-sessions-mcp-darwin-amd64 ./cmd/server
+        GOOS=darwin GOARCH=arm64 go build -o bin/ai-sessions-mcp-darwin-arm64 ./cmd/server
+        GOOS=linux GOARCH=amd64 go build -o bin/ai-sessions-mcp-linux-amd64 ./cmd/server
+        GOOS=windows GOARCH=amd64 go build -o bin/ai-sessions-mcp-windows-amd64.exe ./cmd/server
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          bin/ai-sessions-mcp-darwin-amd64
+          bin/ai-sessions-mcp-darwin-arm64
+          bin/ai-sessions-mcp-linux-amd64
+          bin/ai-sessions-mcp-windows-amd64.exe
+        generate_release_notes: true

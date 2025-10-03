@@ -38,6 +38,9 @@ func main() {
 	if codexAdapter, err := adapters.NewCodexAdapter(); err == nil {
 		adaptersMap["codex"] = codexAdapter
 	}
+	if opencodeAdapter, err := adapters.NewOpencodeAdapter(); err == nil {
+		adaptersMap["opencode"] = opencodeAdapter
+	}
 
 	// Add tools with strongly-typed argument structures
 	addListAvailableToolsTool(server, adaptersMap)

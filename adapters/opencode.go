@@ -215,7 +215,7 @@ func (o *OpencodeAdapter) listProjectSessions(storageDir, projectID, worktree st
 
 		session := Session{
 			ID:           sess.ID,
-			Tool:         "opencode",
+			Source:       "opencode",
 			ProjectPath:  worktree,
 			FirstMessage: firstMessage,
 			Summary:      sess.Title,

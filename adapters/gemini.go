@@ -170,7 +170,7 @@ func (g *GeminiAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 	session := Session{
 		ID:          geminiSess.SessionID,
-		Tool:        "gemini",
+		Source:      "gemini",
 		ProjectPath: projectPath,
 		FilePath:    filePath,
 	}

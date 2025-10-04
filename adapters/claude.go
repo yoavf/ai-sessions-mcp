@@ -38,8 +38,15 @@ type claudeMessage struct {
 	Summary string                 `json:"summary,omitempty"`
 	Role    string                 `json:"role,omitempty"`
 	Content interface{}            `json:"content,omitempty"`
+	Message *claudeNestedMessage   `json:"message,omitempty"` // Nested message format
 	LeafUUID string                `json:"leafUuid,omitempty"`
 	Metadata map[string]interface{} `json:"-"` // Capture any extra fields
+}
+
+// claudeNestedMessage represents the nested message structure in newer Claude Code format
+type claudeNestedMessage struct {
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
 }
 
 // projectDirName converts an absolute project path to Claude's directory naming format.
@@ -168,7 +175,7 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 	var session Session
 	session.ID = strings.TrimSuffix(filepath.Base(filePath), ".jsonl")
-	session.Tool = "claude"
+	session.Source = "claude"
 	session.ProjectPath = projectPath
 	session.FilePath = filePath
 
@@ -194,7 +201,12 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 		// Capture first user message
 		if msg.Type == "user" && !foundFirstMessage {
-			session.FirstMessage = extractFirstLine(msg.Content)
+			// Handle both old and new message formats
+			content := msg.Content
+			if msg.Message != nil {
+				content = msg.Message.Content
+			}
+			session.FirstMessage = extractFirstLine(content)
 			foundFirstMessage = true
 			break // We have what we need
 		}
@@ -312,16 +324,24 @@ func (c *ClaudeAdapter) readAllMessages(filePath string) ([]Message, error) {
 			continue
 		}
 
+		// Handle both old and new message formats
+		content := msg.Content
+		role := msg.Type
+		if msg.Message != nil {
+			content = msg.Message.Content
+			role = msg.Message.Role
+		}
+
 		message := Message{
-			Role:     msg.Type,
-			Content:  contentToString(msg.Content),
+			Role:     role,
+			Content:  contentToString(content),
 			Metadata: make(map[string]interface{}),
 		}
 
 		// Add any additional metadata
-		if msg.Type == "assistant" {
+		if role == "assistant" {
 			// Preserve structured content for tool calls, thinking blocks, etc.
-			message.Metadata["raw_content"] = msg.Content
+			message.Metadata["raw_content"] = content
 		}
 
 		messages = append(messages, message)

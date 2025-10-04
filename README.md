@@ -13,6 +13,16 @@ Allow AI tools to search, list, and read your previous local coding sessions fro
 - Learning from previous conversations
 - Resuming interrupted work
 
+## Demo
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23" alt="AI Sessions MCP demo"><br>
+  <em>Resuming a Claude Code session in Codex CLI.</em>
+</p>
+
+![ai-sessions-mcp-demo](https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23)
+
+
 ## Installation
 
 ### Download Pre-built Binary (No Go Required)

@@ -1,6 +1,5 @@
 # Binaries
 bin/
-ai-sessions-mcp
 *.exe
 *.exe~
 *.dll

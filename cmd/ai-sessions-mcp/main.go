@@ -59,7 +59,7 @@ func main() {
 	defer searchCache.Close()
 
 	// Add tools with strongly-typed argument structures
-	addListAvailableToolsTool(server, adaptersMap)
+	addListAvailableSourcesTool(server, adaptersMap)
 	addListSessionsTool(server, adaptersMap)
 	addSearchSessionsTool(server, adaptersMap, searchCache)
 	addGetSessionTool(server, adaptersMap)
@@ -70,14 +70,14 @@ func main() {
 	}
 }
 
-// Tool 1: list_available_tools
-type listAvailableToolsArgs struct{}
+// Tool 1: list_available_sources
+type listAvailableSourcesArgs struct{}
 
-func addListAvailableToolsTool(server *mcp.Server, adaptersMap map[string]adapters.SessionAdapter) {
+func addListAvailableSourcesTool(server *mcp.Server, adaptersMap map[string]adapters.SessionAdapter) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_available_tools",
-		Description: "List which AI CLI tools have sessions available (e.g., claude, gemini, codex, opencode)",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args listAvailableToolsArgs) (*mcp.CallToolResult, any, error) {
+		Name:        "list_available_sources",
+		Description: "List which AI CLI sources have sessions available (e.g., claude, gemini, codex, opencode)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args listAvailableSourcesArgs) (*mcp.CallToolResult, any, error) {
 		available := make([]map[string]interface{}, 0, len(adaptersMap))
 		for name, adapter := range adaptersMap {
 			available = append(available, map[string]interface{}{

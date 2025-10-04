@@ -6,7 +6,7 @@ An MCP server that makes sessions from Claude Code, OpenAI Codex, Gemini CLI and
 
 ## What It Does
 
-Allow AI tools to search, list, and read your previous local coding sessions from multiple CLI tools. Useful for:
+Allow AI agents to search, list, and read your previous local coding sessions from multiple CLI coding agents. Useful for:
 
 - Finding past solutions to similar problems
 - Reviewing what you worked on recently
@@ -80,19 +80,19 @@ Once configured, you can ask:
 
 ## How It Works
 
-The server reads session files stored locally by various CLI tools:
+The server reads session files stored locally by various CLI coding agents:
 
 - **Claude Code**: `~/.claude/projects/[PROJECT_DIR]/*.jsonl`
 - **Gemini CLI**: `~/.gemini/tmp/[PROJECT_HASH]/chats/session-*.json`
 - **OpenAI Codex**: `~/.codex/sessions/` and `~/.codex/archived_sessions/`
 - **opencode**: `~/.local/share/opencode/storage/`
 
-When you ask your ai tool to list or search sessions, it automatically uses these tools to access your session history.
+When you ask your AI agent to list or search sessions, it automatically uses these agents to access your session history.
 
 ## Available Tools
 
-### `list_available_tools`
-Shows which AI CLI tools have sessions on your system.
+### `list_available_sources`
+Shows which AI CLI coding agents have sessions on your system.
 
 ### `list_sessions`
 Lists recent sessions from all projects (newest first).
@@ -125,7 +125,7 @@ Retrieves full session content with pagination.
 
 **Arguments**:
 - `session_id` (required): Session ID from list results
-- `source` (required): Which source created it
+- `source` (required): Which coding agent created it
 - `page` (optional): Page number (default: 0)
 - `page_size` (optional): Messages per page (default: 20)
 

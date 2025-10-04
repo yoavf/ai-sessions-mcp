@@ -1,16 +1,16 @@
 // Package adapters provides interfaces and types for accessing AI assistant sessions
-// from different CLI tools (Claude Code, Gemini CLI, OpenAI Codex, opencode).
+// from different CLI coding agents (Claude Code, Gemini CLI, OpenAI Codex, opencode).
 package adapters
 
 import "time"
 
-// Session represents a unified view of an AI assistant session, regardless of the source tool.
+// Session represents a unified view of an AI assistant session, regardless of the source agent.
 // Each session contains metadata about when it occurred, what was discussed, and how to retrieve its full content.
 type Session struct {
 	// ID is the unique identifier for this session (format varies by source)
 	ID string `json:"id"`
 
-	// Source identifies which CLI tool created this session (e.g., "claude", "gemini", "codex", "opencode")
+	// Source identifies which CLI coding agent created this session (e.g., "claude", "gemini", "codex", "opencode")
 	Source string `json:"source"`
 
 	// ProjectPath is the absolute path to the project directory where this session occurred
@@ -30,7 +30,7 @@ type Session struct {
 }
 
 // Message represents a single message within a session.
-// This provides a unified format for messages across different tools.
+// This provides a unified format for messages across different agents.
 type Message struct {
 	// Role identifies who sent the message: "user", "assistant", or "system"
 	Role string `json:"role"`
@@ -38,14 +38,14 @@ type Message struct {
 	// Content is the text content of the message
 	Content string `json:"content"`
 
-	// Timestamp is when this message was sent (may be empty for some tools)
+	// Timestamp is when this message was sent (may be empty for some agents)
 	Timestamp time.Time `json:"timestamp,omitempty"`
 
-	// Metadata contains tool-specific additional data (e.g., tool calls, thinking blocks)
+	// Metadata contains agent-specific additional data (e.g., tool calls, thinking blocks)
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// SessionAdapter is the interface that each tool-specific adapter must implement.
+// SessionAdapter is the interface that each agent-specific adapter must implement.
 // It provides methods to list sessions and retrieve full session content.
 type SessionAdapter interface {
 	// Name returns the name of this adapter (e.g., "claude", "gemini")

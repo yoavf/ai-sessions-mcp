@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
 
@@ -19,19 +19,69 @@ jobs:
       with:
         go-version: '1.25'
 
-    - name: Build for multiple platforms
+    - name: Import signing certificate
+      env:
+        MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+        MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        MAC_KEYCHAIN_PASSWORD: ${{ secrets.MAC_KEYCHAIN_PASSWORD }}
       run: |
-        GOOS=darwin GOARCH=amd64 go build -o bin/ai-sessions-mcp-darwin-amd64 ./cmd/ai-sessions-mcp
-        GOOS=darwin GOARCH=arm64 go build -o bin/ai-sessions-mcp-darwin-arm64 ./cmd/ai-sessions-mcp
-        GOOS=linux GOARCH=amd64 go build -o bin/ai-sessions-mcp-linux-amd64 ./cmd/ai-sessions-mcp
-        GOOS=windows GOARCH=amd64 go build -o bin/ai-sessions-mcp-windows-amd64.exe ./cmd/ai-sessions-mcp
+        set -eo pipefail
+        KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+        CERT_PATH="$RUNNER_TEMP/cert.p12"
+        echo "$MAC_CERT_P12" | base64 --decode > "$CERT_PATH"
+        security create-keychain -p "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+        security set-key-partition-list -S apple-tool:,apple: -k "$MAC_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security list-keychains -s "$KEYCHAIN_PATH"
+        security default-keychain -s "$KEYCHAIN_PATH"
+        security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+    - name: Build binaries
+      run: |
+        set -eo pipefail
+        mkdir -p bin
+        GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-darwin-amd64 ./cmd/ai-sessions-mcp
+        GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-darwin-arm64 ./cmd/ai-sessions-mcp
+        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-linux-amd64 ./cmd/ai-sessions-mcp
+        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-windows-amd64.exe ./cmd/ai-sessions-mcp
+
+    - name: Sign and notarize macOS binaries
+      env:
+        SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+        NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+        NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+        NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+      run: |
+        set -eo pipefail
+        KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+        echo "$NOTARY_API_KEY" | base64 --decode > "$KEY_PATH"
+        for ARCH in amd64 arm64; do
+          BIN="bin/ai-sessions-mcp-darwin-${ARCH}"
+          /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$BIN"
+          ARCHIVE="$BIN.zip"
+          rm -f "$ARCHIVE"
+          /usr/bin/zip -j "$ARCHIVE" "$BIN"
+          xcrun notarytool submit "$ARCHIVE" \
+            --key "$KEY_PATH" \
+            --key-id "$NOTARY_API_KEY_ID" \
+            --issuer "$NOTARY_API_ISSUER_ID" \
+            --wait
+        done
+        rm -f bin/ai-sessions-mcp-linux-amd64.zip
+        /usr/bin/zip -j bin/ai-sessions-mcp-linux-amd64.zip bin/ai-sessions-mcp-linux-amd64
+        rm -f bin/ai-sessions-mcp-windows-amd64.zip
+        /usr/bin/zip -j bin/ai-sessions-mcp-windows-amd64.zip bin/ai-sessions-mcp-windows-amd64.exe
+        /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-mcp-darwin-amd64
+        /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-mcp-darwin-arm64
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          bin/ai-sessions-mcp-darwin-amd64
-          bin/ai-sessions-mcp-darwin-arm64
-          bin/ai-sessions-mcp-linux-amd64
-          bin/ai-sessions-mcp-windows-amd64.exe
+          bin/ai-sessions-mcp-darwin-amd64.zip
+          bin/ai-sessions-mcp-darwin-arm64.zip
+          bin/ai-sessions-mcp-linux-amd64.zip
+          bin/ai-sessions-mcp-windows-amd64.zip
         generate_release_notes: true

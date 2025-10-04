@@ -15,18 +15,12 @@ Allow AI tools to search, list, and read your previous local coding sessions fro
 
 ## Installation
 
-### Download Pre-built Binary
+### Download Pre-built Binary (No Go Required)
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/yoavf/ai-sessions-mcp/releases).
 
 
-### Install with `go install`
-
-```bash
-go install github.com/yoavf/ai-sessions-mcp/cmd/ai-sessions-mcp@latest
-```
-
-Then use `~/go/bin/ai-sessions-mcp` as the command in your Claude Desktop config (or add `~/go/bin` to your PATH).
+Unzip and move the binary somewhere in your path and point your MCP config at that location.
 
 ### Build from Source
 
@@ -37,7 +31,7 @@ cd ai-sessions-mcp
 go build -o bin/ai-sessions-mcp ./cmd/ai-sessions-mcp
 ```
 
-The resulting binary in `~/go/bin/ai-sessions-mcp` is self-contained and can be copied anywhere.
+Move the resulting binary anywhere you like and use that path in your MCP config.
 
 ### Setup
 
@@ -72,7 +66,7 @@ Add to your Claude Desktop config file:
 Once configured, you can ask:
 
 - "Let's continue my latest sesion from Claude Code"
-- "Show me my recent Claude Code sessions"
+- "Show me my recent Codex sessions"
 - "Search my sessions for authentication bugs"
 - "How many times did Claude tell me I was [absolutely right](https://absolutelyright.lol) yesterday?"
 
@@ -85,19 +79,7 @@ The server reads session files stored locally by various CLI tools:
 - **OpenAI Codex**: `~/.codex/sessions/` and `~/.codex/archived_sessions/`
 - **opencode**: `~/.local/share/opencode/storage/`
 
-When you ask Claude to list or search sessions, it automatically uses these tools to access your session history.
-
-### Smart Search with BM25
-
-Search uses **BM25 ranking** (the algorithm behind many search engines) to return the most relevant results:
-
-- **Automatic indexing**: Sessions are indexed lazily on first search
-- **Incremental updates**: Only modified sessions are re-indexed
-- **Relevance scoring**: Results ranked by how well they match your query
-- **Contextual snippets**: Each result includes an excerpt showing where the match occurred
-- **Cache location**: `~/.cache/ai-sessions-mcp/search.db`
-
-The index is fully automatic - no manual maintenance required.
+When you ask your ai tool to list or search sessions, it automatically uses these tools to access your session history.
 
 ## Available Tools
 

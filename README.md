@@ -16,7 +16,7 @@ Allow AI agents to search, list, and read your previous local coding sessions fr
 ## Demo
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23" width=800 alt="AI Sessions MCP demo"><br>
+  <img src="https://github.com/user-attachments/assets/c75edc64-32f0-4deb-93d6-301c1e01ea81" width=800 alt="AI Sessions MCP demo"><br>
   <em>Resuming a Claude Code session in Codex CLI.</em>
 </p>
 

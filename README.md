@@ -15,7 +15,7 @@ Allow AI tools to search, list, and read your previous local coding sessions fro
 
 ## Installation
 
-### Download Pre-built Binary (No Go Required)
+### Download Pre-built Binary
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/yoavf/ai-sessions-mcp/releases).
 

@@ -1,6 +1,6 @@
 # AI Sessions MCP Server
 
-A Model Context Protocol (MCP) server that provides access to your AI assistant CLI sessions from Claude Code, Gemini CLI, OpenAI Codex, and opencode.
+An MCP server that makes sessions from Claude Code, OpenAI Codex, Gemini CLI and opencode available to any MCP compatible client.
 
 *Mostly written using Claude Code.*
 
@@ -16,20 +16,15 @@ Allow AI tools to search, list, and read your previous local coding sessions fro
 ## Demo
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23" alt="AI Sessions MCP demo"><br>
+  <img src="https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23" width=800 alt="AI Sessions MCP demo"><br>
   <em>Resuming a Claude Code session in Codex CLI.</em>
 </p>
 
-![ai-sessions-mcp-demo](https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23)
-
-
 ## Installation
 
-### Download Pre-built Binary (No Go Required)
+### Download Pre-built Binary
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/yoavf/ai-sessions-mcp/releases).
-
-
 Unzip and move the binary somewhere in your path and point your MCP config at that location.
 
 ### Build from Source
@@ -51,14 +46,17 @@ Move the resulting binary anywhere you like and use that path in your MCP config
 claude mcp add ai-sessions /path/to/ai-sessions-mcp
 ```
 
+#### Codex CLI
+
+Edit `~/.codex/config.toml` and add:
+```
+[mcp_servers.ai_session]
+command = "/path/to/ai-sessions-mcp"
+```
+
 #### Claude Desktop
 
-Add to your Claude Desktop config file:
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
+Add to your Claude Desktop config file (open via `Settings` -> `Developer` -> `Edit Config`)
 ```json
 {
   "mcpServers": {

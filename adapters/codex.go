@@ -97,7 +97,7 @@ func (c *CodexAdapter) ListSessions(projectPath string, limit int) ([]Session, e
 
 		session := Session{
 			ID:           info.ID,
-			Tool:         "codex",
+			Source:       "codex",
 			ProjectPath:  projectPath,
 			FirstMessage: info.FirstUserMessage,
 			FilePath:     info.FilePath,
@@ -159,7 +159,7 @@ func (c *CodexAdapter) listAllSessions(sessionDirs []string, limit int) ([]Sessi
 
 		session := Session{
 			ID:           info.ID,
-			Tool:         "codex",
+			Source:       "codex",
 			ProjectPath:  info.CWD,
 			FirstMessage: info.FirstUserMessage,
 			FilePath:     info.FilePath,

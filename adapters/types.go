@@ -1,5 +1,5 @@
 // Package adapters provides interfaces and types for accessing AI assistant sessions
-// from different CLI tools (Claude Code, Gemini CLI, OpenAI Codex, Cursor CLI).
+// from different CLI tools (Claude Code, Gemini CLI, OpenAI Codex, opencode).
 package adapters
 
 import "time"
@@ -7,11 +7,11 @@ import "time"
 // Session represents a unified view of an AI assistant session, regardless of the source tool.
 // Each session contains metadata about when it occurred, what was discussed, and how to retrieve its full content.
 type Session struct {
-	// ID is the unique identifier for this session (format varies by tool)
+	// ID is the unique identifier for this session (format varies by source)
 	ID string `json:"id"`
 
-	// Tool identifies which CLI tool created this session (e.g., "claude", "gemini", "codex", "cursor")
-	Tool string `json:"tool"`
+	// Source identifies which CLI tool created this session (e.g., "claude", "gemini", "codex", "opencode")
+	Source string `json:"source"`
 
 	// ProjectPath is the absolute path to the project directory where this session occurred
 	ProjectPath string `json:"project_path"`

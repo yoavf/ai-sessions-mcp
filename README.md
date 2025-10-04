@@ -71,7 +71,7 @@ Add to your Claude Desktop config file:
 
 Once configured, you can ask:
 
-- "What AI CLI tools do I have sessions for?"
+- "Let's continue my latest sesion from Claude Code"
 - "Show me my recent Claude Code sessions"
 - "Search my sessions for authentication bugs"
 - "How many times did Claude tell me I was [absolutely right](https://absolutelyright.lol) yesterday?"
@@ -87,6 +87,18 @@ The server reads session files stored locally by various CLI tools:
 
 When you ask Claude to list or search sessions, it automatically uses these tools to access your session history.
 
+### Smart Search with BM25
+
+Search uses **BM25 ranking** (the algorithm behind many search engines) to return the most relevant results:
+
+- **Automatic indexing**: Sessions are indexed lazily on first search
+- **Incremental updates**: Only modified sessions are re-indexed
+- **Relevance scoring**: Results ranked by how well they match your query
+- **Contextual snippets**: Each result includes an excerpt showing where the match occurred
+- **Cache location**: `~/.cache/ai-sessions-mcp/search.db`
+
+The index is fully automatic - no manual maintenance required.
+
 ## Available Tools
 
 ### `list_available_tools`
@@ -96,31 +108,36 @@ Shows which AI CLI tools have sessions on your system.
 Lists recent sessions from all projects (newest first).
 
 **Arguments**:
-- `tool` (optional): Filter by `claude`, `gemini`, `codex`, or `opencode`
+- `source` (optional): Filter by `claude`, `gemini`, `codex`, or `opencode`
 - `project_path` (optional): Filter by specific project directory
 - `limit` (optional): Max results (default: 10)
 
-**Example**: `{"tool": "claude", "limit": 20}`
+**Example**: `{"source": "claude", "limit": 20}`
 
 ### `search_sessions`
-Searches session content for specific queries.
+Searches session content using BM25 ranking. Returns results sorted by relevance score with contextual snippets.
 
 **Arguments**:
-- `query` (required): Search term
-- `tool` (optional): Filter by tool
+- `query` (required): Search term (supports multiple keywords)
+- `source` (optional): Filter by source
 - `project_path` (optional): Filter by project
 - `limit` (optional): Max results (default: 10)
 
 **Example**: `{"query": "authentication bug"}`
+
+**Returns**: Each match includes:
+- `session`: Session metadata (ID, source, project, timestamp)
+- `score`: Relevance score (higher = more relevant)
+- `snippet`: Contextual excerpt (~300 chars) showing where the match occurred
 
 ### `get_session`
 Retrieves full session content with pagination.
 
 **Arguments**:
 - `session_id` (required): Session ID from list results
-- `tool` (required): Which tool created it
+- `source` (required): Which source created it
 - `page` (optional): Page number (default: 0)
-- `page_size` (optional): Messages per page (default: 50)
+- `page_size` (optional): Messages per page (default: 20)
 
 ## Troubleshooting
 
@@ -137,7 +154,7 @@ Retrieves full session content with pagination.
 **Sessions are slow**
 - Use smaller `limit` values
 - Use `page_size` parameter for large sessions
-- Filter by specific `tool` or `project_path`
+- Filter by specific `source` or `project_path`
 
 ## License
 

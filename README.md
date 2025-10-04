@@ -129,22 +129,6 @@ Retrieves full session content with pagination.
 - `page` (optional): Page number (default: 0)
 - `page_size` (optional): Messages per page (default: 20)
 
-## Troubleshooting
-
-**Server disconnects immediately**
-- Check that the binary path in the config is correct and absolute
-- Ensure the binary is executable: `chmod +x bin/ai-sessions-mcp`
-- Verify the JSON config is valid (no trailing commas)
-
-**No sessions found**
-- Confirm sessions exist: `ls ~/.claude/projects/` or `ls ~/.gemini/tmp/`
-- By default, lists sessions from **all projects**
-- To filter by project, add `"project_path": "/path/to/project"`
-
-**Sessions are slow**
-- Use smaller `limit` values
-- Use `page_size` parameter for large sessions
-- Filter by specific `source` or `project_path`
 
 ## License
 

@@ -268,7 +268,7 @@ func indexSessions(adaptersMap map[string]adapters.SessionAdapter, cache *search
 			}
 
 			// Get full session content for indexing
-			messages, err := adapter.GetSession(session.ID, 0, 1000) // Get first 1000 messages
+			messages, err := adapter.GetSession(session.ID, 0, 100000) // Get all messages
 			if err != nil {
 				log.Printf("Error getting session %s: %v", session.ID, err)
 				continue

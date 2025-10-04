@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -224,14 +225,9 @@ func (c *Cache) Search(query string, source string, projectPath string, limit in
 	}
 
 	// Sort by score (descending)
-	// We'll do this in-place using a simple bubble sort since results are typically small
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].Score > results[i].Score {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 
 	// Apply limit
 	if limit > 0 && len(results) > limit {

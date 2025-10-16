@@ -296,26 +296,20 @@ func formatRelativeTime(t time.Time) string {
 }
 
 // getProjectName extracts a meaningful project path segment from the full path
-// It removes the "Users/[username]/" prefix and returns the rest
+// It removes the user's home directory prefix to create a shorter, more readable name.
 func getProjectName(projectPath string) string {
-	// For paths like "Users/yoavfarhi/dev/my-project", we want "dev-my-project"
-	// Find the pattern "Users/<username>/" and remove it
-
-	// First, try to find the username pattern
-	// Look for "Users/" followed by anything up to the next "/"
-	if idx := strings.Index(projectPath, "Users/"); idx != -1 {
-		// Find the end of the username (next "/" after "Users/")
-		remaining := projectPath[idx+6:] // Skip "Users/"
-		if slashIdx := strings.Index(remaining, "/"); slashIdx != -1 {
-			// Get everything after "Users/[username]/"
-			result := remaining[slashIdx+1:]
-			// Convert slashes back to dashes for display
-			return strings.ReplaceAll(result, "/", "-")
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		// Ensure homeDir has a trailing separator for correct trimming
+		homeDirWithSeparator := homeDir + string(filepath.Separator)
+		if strings.HasPrefix(projectPath, homeDirWithSeparator) {
+			relativePath := strings.TrimPrefix(projectPath, homeDirWithSeparator)
+			return strings.ReplaceAll(relativePath, string(filepath.Separator), "-")
 		}
 	}
 
 	// Fallback: convert slashes to dashes and use the base name
-	return strings.ReplaceAll(filepath.Base(projectPath), "/", "-")
+	return strings.ReplaceAll(filepath.Base(projectPath), string(filepath.Separator), "-")
 }
 
 // cleanFirstMessage trims and truncates the first message

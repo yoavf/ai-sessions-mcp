@@ -101,11 +101,6 @@ aisessions upload /path/to/session.jsonl --title "Custom Title"
 ### Options
 
 - `--title <title>` - Set a custom title for the uploaded transcript
-- `--url <url>` - Override the API URL (default: https://aisessions.dev)
-
-### Environment Variables
-
-- `AISESSIONS_API_URL` - Override the API URL for development (e.g., `http://localhost:3000`)
 
 ## MCP Usage
 

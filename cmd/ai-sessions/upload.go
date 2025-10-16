@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -74,14 +73,9 @@ func uploadFile(apiURL, token, filePath, title string) error {
 		IsConfirm: true,
 	}
 
-	result, err := prompt.Run()
+	_, err = prompt.Run()
 	if err != nil {
-		return fmt.Errorf("upload cancelled")
-	}
-
-	// Check if user confirmed
-	result = strings.ToLower(strings.TrimSpace(result))
-	if result != "y" && result != "yes" {
+		// This handles 'n', 'N', Ctrl+C, etc.
 		return fmt.Errorf("upload cancelled")
 	}
 

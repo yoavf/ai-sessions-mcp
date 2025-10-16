@@ -34,8 +34,8 @@ func main() {
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "ai-sessions-mcp",
-		Version: "1.0.0",
+		Name:    "ai-sessions",
+		Version: "2.0.0",
 	}, opts)
 
 	// Initialize adapters
@@ -58,7 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get home directory: %v", err)
 	}
-	cachePath := filepath.Join(homeDir, ".cache", "ai-sessions-mcp", "search.db")
+	cachePath := filepath.Join(homeDir, ".cache", "ai-sessions", "search.db")
 	searchCache, err := search.NewCache(cachePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize search cache: %v", err)

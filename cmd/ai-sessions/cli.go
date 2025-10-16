@@ -23,8 +23,7 @@ const (
 )
 
 type Config struct {
-	Token  string `json:"token"`
-	APIURL string `json:"apiUrl"`
+	Token string `json:"token"`
 }
 
 // handleCLI routes CLI commands to their handlers
@@ -42,7 +41,7 @@ func handleCLI() {
 	case "upload":
 		handleUploadCommand()
 	case "version", "-v", "--version":
-		fmt.Println("aisessions version 1.0.0")
+		fmt.Println("aisessions version 2.0.0")
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -190,24 +189,9 @@ func handleLogin() {
 		os.Exit(1)
 	}
 
-	// Optionally prompt for API URL (though env var is preferred for dev)
-	fmt.Print("API URL (press Enter for default, or use AISESSIONS_API_URL env): ")
-	configAPIURL, err2 := reader.ReadString('\n')
-	if err2 != nil {
-		fmt.Fprintf(os.Stderr, "Error reading API URL: %v\n", err2)
-		os.Exit(1)
-	}
-
-	configAPIURL = strings.TrimSpace(configAPIURL)
-	// Don't set apiURL in config if empty - let getAPIURL handle env var priority
-	if configAPIURL == "" {
-		configAPIURL = ""
-	}
-
 	// Save configuration
 	config := Config{
-		Token:  token,
-		APIURL: configAPIURL,
+		Token: token,
 	}
 
 	if err := saveConfig(config); err != nil {
@@ -254,7 +238,7 @@ func formatRelativeTime(t time.Time) string {
 // getProjectName extracts a meaningful project path segment from the full path
 // It removes the "Users/[username]/" prefix and returns the rest
 func getProjectName(projectPath string) string {
-	// For paths like "Users/yoavfarhi/dev/ai-sessions-mcp", we want "dev/ai-sessions-mcp"
+	// For paths like "Users/yoavfarhi/dev/my-project", we want "dev-my-project"
 	// Find the pattern "Users/<username>/" and remove it
 
 	// First, try to find the username pattern
@@ -489,13 +473,14 @@ func handleUploadCommand() {
 		}
 	}
 
-	// Override API URL if provided
+	// Determine API URL (env var, --url flag, or default)
+	finalAPIURL := getAPIURL("")
 	if apiURL != "" {
-		config.APIURL = apiURL
+		finalAPIURL = apiURL
 	}
 
 	// Perform upload
-	if err := uploadFile(config.APIURL, config.Token, filepath, title); err != nil {
+	if err := uploadFile(finalAPIURL, config.Token, filepath, title); err != nil {
 		// Check if it's an authentication error (revoked/expired token)
 		if _, ok := err.(*AuthError); ok {
 			fmt.Println()
@@ -565,9 +550,6 @@ func loadConfig() (*Config, error) {
 	if config.Token == "" {
 		return nil, fmt.Errorf("config file is missing token")
 	}
-
-	// Apply API URL priority: env var > config > default
-	config.APIURL = getAPIURL(config.APIURL)
 
 	return &config, nil
 }

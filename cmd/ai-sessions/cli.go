@@ -156,6 +156,33 @@ func makeClickableURL(url string) string {
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, url)
 }
 
+// validateTokenFormat validates that a token looks like a valid JWT
+func validateTokenFormat(token string) error {
+	// JWT tokens have 3 parts separated by dots: header.payload.signature
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid token format: expected JWT with 3 parts (header.payload.signature), got %d parts", len(parts))
+	}
+
+	// Check that each part is non-empty and contains valid base64url characters
+	for i, part := range parts {
+		if part == "" {
+			return fmt.Errorf("invalid token format: part %d is empty", i+1)
+		}
+		// Base64url uses: A-Z, a-z, 0-9, -, _, and optional padding =
+		for _, char := range part {
+			if !((char >= 'A' && char <= 'Z') ||
+				(char >= 'a' && char <= 'z') ||
+				(char >= '0' && char <= '9') ||
+				char == '-' || char == '_' || char == '=') {
+				return fmt.Errorf("invalid token format: contains invalid character '%c'", char)
+			}
+		}
+	}
+
+	return nil
+}
+
 // handleLogin prompts for and saves authentication token
 func handleLogin(apiURL string) {
 	// Determine API URL with priority: command-line flag > default
@@ -178,45 +205,21 @@ func handleLogin(apiURL string) {
 	// Create reader once and reuse it
 	reader := bufio.NewReader(os.Stdin)
 
-	// Show clickable URL and wait for Enter or timeout
+	// Show clickable URL and wait for user input
 	clickableURL := makeClickableURL(tokenURL)
-	fmt.Printf("Press Enter to open %s in your browser: ", clickableURL)
+	fmt.Printf("Press Enter to open %s in your browser, or paste your token: ", clickableURL)
 
-	// Channel to receive user input
-	inputChan := make(chan string)
+	// Wait for user to press Enter or paste a token
+	line, _ := reader.ReadString('\n')
+	firstInput := strings.TrimSpace(line)
 
-	// Goroutine to wait for Enter key
-	go func() {
-		line, _ := reader.ReadString('\n')
-		inputChan <- line
-	}()
-
-	// Wait for Enter or 5 second timeout
-	var firstInput string
-	select {
-	case firstInput = <-inputChan:
-		// User pressed Enter - clear line and show browser opening message
-		fmt.Print("\r\033[K") // Clear current line
-		firstInput = strings.TrimSpace(firstInput)
-
-		// If they entered a token directly, use it
-		if firstInput != "" {
-			// They pasted the token directly
-			fmt.Printf("Visit %s to generate your token.\n", clickableURL)
-			fmt.Println()
-			fmt.Println("Got it! Using your token...")
-		} else {
-			// They just pressed Enter - open browser
-			fmt.Println("Opening browser...")
-			if err := openBrowser(tokenURL); err != nil {
-				fmt.Printf("Could not open browser: %v\n", err)
-				fmt.Printf("Visit %s to generate your token.\n", clickableURL)
-			}
+	if firstInput == "" {
+		// They just pressed Enter - open browser
+		fmt.Println("\033[36mOpening browser...\033[0m")
+		if err := openBrowser(tokenURL); err != nil {
+			fmt.Printf("\033[33m⚠\033[0m  Could not open browser: %v\n", err)
+			fmt.Printf("Please visit %s to generate your token.\n", clickableURL)
 		}
-	case <-time.After(5 * time.Second):
-		// Timeout - clear line and show visit message
-		fmt.Print("\r\033[K") // Clear current line
-		fmt.Printf("Visit %s to generate your token.\n", clickableURL)
 	}
 
 	// If we didn't get a token on the first input, ask for it
@@ -228,14 +231,21 @@ func handleLogin(apiURL string) {
 		fmt.Print("Enter your token: ")
 		tokenInput, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading token: %v\n", err)
+			fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m Error reading token: %v\n", err)
 			os.Exit(1)
 		}
 		token = strings.TrimSpace(tokenInput)
 	}
 
 	if token == "" {
-		fmt.Fprintf(os.Stderr, "Token cannot be empty\n")
+		fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m Token cannot be empty\n")
+		os.Exit(1)
+	}
+
+	// Validate token format
+	if err := validateTokenFormat(token); err != nil {
+		fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m %v\n", err)
+		fmt.Fprintf(os.Stderr, "Please ensure you copied the entire token from %s\n", tokenURL)
 		os.Exit(1)
 	}
 
@@ -245,15 +255,15 @@ func handleLogin(apiURL string) {
 	}
 
 	if err := saveConfig(config); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving configuration: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m Error saving configuration: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Println()
-	fmt.Println("✓ Token saved successfully!")
+	fmt.Println("\033[32m✓ Token saved successfully!\033[0m")
 	fmt.Println()
 	fmt.Println("You can now upload transcripts:")
-	fmt.Println("  aisessions upload session.jsonl")
+	fmt.Println("  \033[36maisessions upload session.jsonl\033[0m")
 }
 
 // formatRelativeTime converts a timestamp to relative time (e.g., "2 hours ago", "yesterday")

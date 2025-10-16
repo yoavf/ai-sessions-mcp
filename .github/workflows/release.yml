@@ -42,10 +42,10 @@ jobs:
       run: |
         set -eo pipefail
         mkdir -p bin
-        GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-darwin-amd64 ./cmd/ai-sessions-mcp
-        GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-darwin-arm64 ./cmd/ai-sessions-mcp
-        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-linux-amd64 ./cmd/ai-sessions-mcp
-        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-mcp-windows-amd64.exe ./cmd/ai-sessions-mcp
+        GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-amd64 ./cmd/ai-sessions
+        GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-arm64 ./cmd/ai-sessions
+        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-linux-amd64 ./cmd/ai-sessions
+        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-windows-amd64.exe ./cmd/ai-sessions
 
     - name: Sign and notarize macOS binaries
       env:
@@ -58,7 +58,7 @@ jobs:
         KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
         echo "$NOTARY_API_KEY" | base64 --decode > "$KEY_PATH"
         for ARCH in amd64 arm64; do
-          BIN="bin/ai-sessions-mcp-darwin-${ARCH}"
+          BIN="bin/ai-sessions-darwin-${ARCH}"
           /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$BIN"
           ARCHIVE="$BIN.zip"
           rm -f "$ARCHIVE"
@@ -69,19 +69,19 @@ jobs:
             --issuer "$NOTARY_API_ISSUER_ID" \
             --wait
         done
-        rm -f bin/ai-sessions-mcp-linux-amd64.zip
-        /usr/bin/zip -j bin/ai-sessions-mcp-linux-amd64.zip bin/ai-sessions-mcp-linux-amd64
-        rm -f bin/ai-sessions-mcp-windows-amd64.zip
-        /usr/bin/zip -j bin/ai-sessions-mcp-windows-amd64.zip bin/ai-sessions-mcp-windows-amd64.exe
-        /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-mcp-darwin-amd64
-        /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-mcp-darwin-arm64
+        rm -f bin/ai-sessions-linux-amd64.zip
+        /usr/bin/zip -j bin/ai-sessions-linux-amd64.zip bin/ai-sessions-linux-amd64
+        rm -f bin/ai-sessions-windows-amd64.zip
+        /usr/bin/zip -j bin/ai-sessions-windows-amd64.zip bin/ai-sessions-windows-amd64.exe
+        /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-darwin-amd64
+        /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-darwin-arm64
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          bin/ai-sessions-mcp-darwin-amd64.zip
-          bin/ai-sessions-mcp-darwin-arm64.zip
-          bin/ai-sessions-mcp-linux-amd64.zip
-          bin/ai-sessions-mcp-windows-amd64.zip
+          bin/ai-sessions-darwin-amd64.zip
+          bin/ai-sessions-darwin-arm64.zip
+          bin/ai-sessions-linux-amd64.zip
+          bin/ai-sessions-windows-amd64.zip
         generate_release_notes: true

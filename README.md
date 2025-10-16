@@ -33,7 +33,7 @@ Unzip and move the binary somewhere in your path and point your MCP config at th
 
 ```bash
 cd ai-sessions-mcp
-go build -o bin/ai-sessions-mcp ./cmd/ai-sessions-mcp
+go build -o bin/ai-sessions ./cmd/ai-sessions
 ```
 
 Move the resulting binary anywhere you like and use that path in your MCP config.
@@ -43,7 +43,7 @@ Move the resulting binary anywhere you like and use that path in your MCP config
 #### Claude Code
 
 ```bash
-claude mcp add ai-sessions /path/to/ai-sessions-mcp
+claude mcp add ai-sessions /path/to/ai-sessions
 ```
 
 #### Codex CLI
@@ -51,7 +51,7 @@ claude mcp add ai-sessions /path/to/ai-sessions-mcp
 Edit `~/.codex/config.toml` and add:
 ```
 [mcp_servers.ai_session]
-command = "/path/to/ai-sessions-mcp"
+command = "/path/to/ai-sessions"
 ```
 
 #### Claude Desktop
@@ -61,7 +61,7 @@ Add to your Claude Desktop config file (open via `Settings` -> `Developer` -> `E
 {
   "mcpServers": {
     "ai-sessions": {
-      "command": "/path/to/ai-sessions-mcp"
+      "command": "/path/to/ai-sessions"
     }
   }
 }
@@ -69,9 +69,42 @@ Add to your Claude Desktop config file (open via `Settings` -> `Developer` -> `E
 
 **Restart Claude Desktop** to activate.
 
-## Usage
+## CLI Upload
 
-Once configured, you can ask:
+The `ai-sessions` binary includes a CLI tool for uploading Claude Code transcripts to [aisessions.dev](https://aisessions.dev) for sharing.
+
+### Authentication
+
+```bash
+aisessions login
+```
+
+Opens your browser to generate a CLI token. The token is saved locally in `~/.aisessions/config.json`.
+
+### Uploading Sessions
+
+**Interactive mode** (no file argument):
+
+```bash
+aisessions upload
+```
+
+Displays a searchable list of your recent Claude Code sessions. Use arrow keys to navigate and select a session to upload.
+
+**Direct mode** (with file path):
+
+```bash
+aisessions upload /path/to/session.jsonl
+aisessions upload /path/to/session.jsonl --title "Custom Title"
+```
+
+### Options
+
+- `--title <title>` - Set a custom title for the uploaded transcript
+
+## MCP Usage
+
+Once configured as an MCP server, you can ask:
 
 - "Let's continue my latest sesion from Claude Code"
 - "Show me my recent Codex sessions"

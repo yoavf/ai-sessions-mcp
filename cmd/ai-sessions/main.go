@@ -21,13 +21,20 @@ import (
 )
 
 func main() {
+	// Check if running in CLI mode (has command arguments)
+	if len(os.Args) > 1 {
+		handleCLI()
+		return
+	}
+
+	// Otherwise, run as MCP server
 	// Create the MCP server with metadata
 	opts := &mcp.ServerOptions{
 		Instructions: "This server provides access to AI assistant CLI sessions from Claude Code, Gemini CLI, OpenAI Codex, and opencode. Use the tools to search, list, and read previous coding sessions.",
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "ai-sessions-mcp",
+		Name:    "ai-sessions",
 		Version: "1.0.0",
 	}, opts)
 
@@ -51,7 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get home directory: %v", err)
 	}
-	cachePath := filepath.Join(homeDir, ".cache", "ai-sessions-mcp", "search.db")
+	cachePath := filepath.Join(homeDir, ".cache", "ai-sessions", "search.db")
 	searchCache, err := search.NewCache(cachePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize search cache: %v", err)

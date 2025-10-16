@@ -21,6 +21,13 @@ import (
 )
 
 func main() {
+	// Check if running in CLI mode (has command arguments)
+	if len(os.Args) > 1 {
+		handleCLI()
+		return
+	}
+
+	// Otherwise, run as MCP server
 	// Create the MCP server with metadata
 	opts := &mcp.ServerOptions{
 		Instructions: "This server provides access to AI assistant CLI sessions from Claude Code, Gemini CLI, OpenAI Codex, and opencode. Use the tools to search, list, and read previous coding sessions.",

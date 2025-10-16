@@ -34,13 +34,14 @@ func (c *ClaudeAdapter) Name() string {
 
 // claudeMessage represents a single message entry in a Claude Code JSONL file.
 type claudeMessage struct {
-	Type    string                 `json:"type"`
-	Summary string                 `json:"summary,omitempty"`
-	Role    string                 `json:"role,omitempty"`
-	Content interface{}            `json:"content,omitempty"`
-	Message *claudeNestedMessage   `json:"message,omitempty"` // Nested message format
-	LeafUUID string                `json:"leafUuid,omitempty"`
-	Metadata map[string]interface{} `json:"-"` // Capture any extra fields
+	Type        string                 `json:"type"`
+	Summary     string                 `json:"summary,omitempty"`
+	Role        string                 `json:"role,omitempty"`
+	Content     interface{}            `json:"content,omitempty"`
+	Message     *claudeNestedMessage   `json:"message,omitempty"` // Nested message format
+	LeafUUID    string                 `json:"leafUuid,omitempty"`
+	IsSidechain bool                   `json:"isSidechain,omitempty"` // Skip sidechain messages
+	Metadata    map[string]interface{} `json:"-"`                     // Capture any extra fields
 }
 
 // claudeNestedMessage represents the nested message structure in newer Claude Code format
@@ -199,14 +200,39 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 			session.Summary = msg.Summary
 		}
 
-		// Capture first user message
+		// Capture first user message (skip system messages and sidechain messages)
 		if msg.Type == "user" && !foundFirstMessage {
+			// Skip sidechain messages (like "Warmup")
+			if msg.IsSidechain {
+				continue
+			}
+
 			// Handle both old and new message formats
 			content := msg.Content
 			if msg.Message != nil {
 				content = msg.Message.Content
 			}
-			session.FirstMessage = extractFirstLine(content)
+
+			// Extract the text and check if it's a system message to skip
+			firstLine := extractFirstLine(content)
+			trimmed := strings.TrimSpace(firstLine)
+
+			// Skip empty messages
+			if trimmed == "" {
+				continue
+			}
+
+			// Skip caveat messages, slash commands, and other system messages
+			if strings.HasPrefix(trimmed, "Caveat:") ||
+			   strings.HasPrefix(trimmed, "<command-name>") ||
+			   strings.HasPrefix(trimmed, "<bash-input>") ||
+			   strings.HasPrefix(trimmed, "<local-command-stdout>") ||
+			   (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+				// Skip and continue looking for the next user message
+				continue
+			}
+
+			session.FirstMessage = firstLine
 			foundFirstMessage = true
 			break // We have what we need
 		}
@@ -216,7 +242,48 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 		return session, fmt.Errorf("error reading session file: %w", err)
 	}
 
+	// If no valid first message was found, use a placeholder
+	if session.FirstMessage == "" {
+		session.FirstMessage = "(Empty session)"
+	}
+
 	return session, nil
+}
+
+// stripSystemXMLTags removes system XML tags from the beginning of a message.
+// These tags contain metadata that shouldn't be displayed as the first message.
+func stripSystemXMLTags(text string) string {
+	// List of system XML tags to strip from the beginning
+	// (matches SYSTEM_XML_TAGS from claude-transcripts/src/components/TranscriptViewer.tsx)
+	systemTags := []string{
+		"ide_opened_file",
+		"ide_selection",
+		"ide_diagnostics",
+		"post-tool-use-hook",
+		"system-reminder",
+		"user-prompt-submit-hook",
+		"local-command-stdout",
+	}
+
+	for _, tag := range systemTags {
+		openTag := "<" + tag + ">"
+		closeTag := "</" + tag + ">"
+
+		// Check if text starts with this tag
+		if strings.HasPrefix(text, openTag) {
+			// Find the closing tag
+			closeIdx := strings.Index(text, closeTag)
+			if closeIdx != -1 {
+				// Strip everything up to and including the closing tag
+				text = text[closeIdx+len(closeTag):]
+				text = strings.TrimSpace(text)
+				// Recursively check for more tags
+				return stripSystemXMLTags(text)
+			}
+		}
+	}
+
+	return text
 }
 
 // extractFirstLine extracts the first non-empty line from content.
@@ -228,6 +295,15 @@ func extractFirstLine(content interface{}) string {
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
 			if trimmed != "" {
+				// Strip system XML tags from the beginning
+				trimmed = stripSystemXMLTags(trimmed)
+				trimmed = strings.TrimSpace(trimmed)
+
+				// If empty after stripping tags, continue to next line
+				if trimmed == "" {
+					continue
+				}
+
 				// Limit to 200 characters
 				if len(trimmed) > 200 {
 					return trimmed[:200] + "..."
@@ -321,6 +397,11 @@ func (c *ClaudeAdapter) readAllMessages(filePath string) ([]Message, error) {
 
 		// Only process user and assistant messages
 		if msg.Type != "user" && msg.Type != "assistant" {
+			continue
+		}
+
+		// Skip sidechain messages
+		if msg.IsSidechain {
 			continue
 		}
 

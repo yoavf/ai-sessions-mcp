@@ -16,7 +16,7 @@ Allow AI agents to search, list, and read your previous local coding sessions fr
 ## Demo
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/946e09af-cf60-4c38-8a22-d5f90be05c23" width=800 alt="AI Sessions MCP demo"><br>
+  <img src="https://github.com/user-attachments/assets/c75edc64-32f0-4deb-93d6-301c1e01ea81" width=800 alt="AI Sessions MCP demo"><br>
   <em>Resuming a Claude Code session in Codex CLI.</em>
 </p>
 
@@ -167,22 +167,6 @@ Retrieves full session content with pagination.
 - `page` (optional): Page number (default: 0)
 - `page_size` (optional): Messages per page (default: 20)
 
-## Troubleshooting
-
-**Server disconnects immediately**
-- Check that the binary path in the config is correct and absolute
-- Ensure the binary is executable: `chmod +x bin/ai-sessions`
-- Verify the JSON config is valid (no trailing commas)
-
-**No sessions found**
-- Confirm sessions exist: `ls ~/.claude/projects/` or `ls ~/.gemini/tmp/`
-- By default, lists sessions from **all projects**
-- To filter by project, add `"project_path": "/path/to/project"`
-
-**Sessions are slow**
-- Use smaller `limit` values
-- Use `page_size` parameter for large sessions
-- Filter by specific `source` or `project_path`
 
 ## License
 

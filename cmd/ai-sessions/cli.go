@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,36 @@ type Config struct {
 	Token string `json:"token"`
 }
 
+// validateAPIURL validates that a URL is from a trusted domain
+// For security, we only allow:
+// - https://aisessions.dev (production)
+// - http://localhost:* (local development)
+// - http://127.0.0.1:* (local development)
+func validateAPIURL(apiURL string) error {
+	parsedURL, err := url.Parse(apiURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	// For localhost/127.0.0.1, only allow http (not https to avoid cert issues in dev)
+	if parsedURL.Hostname() == "localhost" || parsedURL.Hostname() == "127.0.0.1" {
+		if parsedURL.Scheme != "http" {
+			return fmt.Errorf("localhost URLs must use http:// (not https://)")
+		}
+		return nil
+	}
+
+	// For production, only allow aisessions.dev with https
+	if parsedURL.Hostname() == "aisessions.dev" {
+		if parsedURL.Scheme != "https" {
+			return fmt.Errorf("aisessions.dev must use https://")
+		}
+		return nil
+	}
+
+	return fmt.Errorf("untrusted domain: %s (only aisessions.dev, localhost, and 127.0.0.1 are allowed)", parsedURL.Hostname())
+}
+
 // handleCLI routes CLI commands to their handlers
 func handleCLI() {
 	if len(os.Args) < 2 {
@@ -37,7 +68,19 @@ func handleCLI() {
 
 	switch command {
 	case "login", "config":
-		handleLogin()
+		// Parse optional --url flag for login command
+		var apiURL string
+		for i := 2; i < len(os.Args); i++ {
+			if os.Args[i] == "--url" {
+				if i+1 >= len(os.Args) {
+					fmt.Fprintf(os.Stderr, "Error: --url requires a value\n")
+					os.Exit(1)
+				}
+				apiURL = os.Args[i+1]
+				break
+			}
+		}
+		handleLogin(apiURL)
 	case "upload":
 		handleUploadCommand()
 	case "version", "-v", "--version":
@@ -68,17 +111,14 @@ Options:
   --title <title>    Set the title for the uploaded transcript (upload only)
   --url <url>        Override API URL (default: https://aisessions.dev)
 
-Environment Variables:
-  AISESSIONS_API_URL    Override API URL (e.g., http://localhost:3000)
-
 Examples:
   aisessions login
   aisessions upload session.jsonl
   aisessions upload session.jsonl --title "Bug Fix Session"
 
   # Development mode (use local server)
-  export AISESSIONS_API_URL=http://localhost:3000
-  aisessions upload session.jsonl
+  aisessions login --url http://localhost:3000
+  aisessions upload session.jsonl --url http://localhost:3000
 
 Authentication:
   1. Visit https://aisessions.dev/my-transcripts
@@ -117,9 +157,19 @@ func makeClickableURL(url string) string {
 }
 
 // handleLogin prompts for and saves authentication token
-func handleLogin() {
-	// Determine API URL (respects AISESSIONS_API_URL env var)
-	apiURL := getAPIURL("")
+func handleLogin(apiURL string) {
+	// Determine API URL with priority: command-line flag > default
+	if apiURL == "" {
+		apiURL = getAPIURL("")
+	}
+
+	// Validate the URL for security (prevent phishing via terminal hyperlinks)
+	if err := validateAPIURL(apiURL); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Invalid API URL: %v\n", err)
+		fmt.Fprintf(os.Stderr, "For local development, use: --url http://localhost:3000\n")
+		os.Exit(1)
+	}
+
 	tokenURL := apiURL + "/my-transcripts"
 
 	fmt.Println("AI Sessions CLI - Login")
@@ -463,7 +513,7 @@ func handleUploadCommand() {
 		// Not authenticated - start login flow automatically
 		fmt.Println("Not authenticated. Let's set up your CLI access.")
 		fmt.Println()
-		handleLogin()
+		handleLogin("")
 
 		// Try loading config again after login
 		config, err = loadConfig()
@@ -473,7 +523,7 @@ func handleUploadCommand() {
 		}
 	}
 
-	// Determine API URL (env var, --url flag, or default)
+	// Determine API URL (--url flag or default)
 	finalAPIURL := getAPIURL("")
 	if apiURL != "" {
 		finalAPIURL = apiURL
@@ -486,7 +536,7 @@ func handleUploadCommand() {
 			fmt.Println()
 			fmt.Println("Your token has expired or been revoked. Let's re-authenticate.")
 			fmt.Println()
-			handleLogin()
+			handleLogin("")
 
 			fmt.Println()
 			fmt.Println("Login successful! Please run your upload command again:")
@@ -514,19 +564,14 @@ func getConfigPath() (string, error) {
 	return configPath, nil
 }
 
-// getAPIURL returns the API URL with priority: env var > config > default
+// getAPIURL returns the API URL with priority: config > default
 func getAPIURL(configURL string) string {
-	// 1. Check environment variable first (for development)
-	if envURL := os.Getenv("AISESSIONS_API_URL"); envURL != "" {
-		return envURL
-	}
-
-	// 2. Use config value if set
+	// Use config value if set
 	if configURL != "" {
 		return configURL
 	}
 
-	// 3. Fall back to default
+	// Fall back to default
 	return defaultAPIURL
 }
 

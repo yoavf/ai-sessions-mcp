@@ -59,16 +59,16 @@ type opencodeSession struct {
 
 // opencodeMessage represents a message file in storage/message/[SESSION_ID]/
 type opencodeMessage struct {
-	ID       string                 `json:"id"`
-	Role     string                 `json:"role"`
-	System   interface{}            `json:"system,omitempty"` // Can be string or array
-	Mode     string                 `json:"mode,omitempty"`
-	Content  interface{}            `json:"content,omitempty"`
-	Cost     float64                `json:"cost,omitempty"`
-	Tokens   map[string]interface{} `json:"tokens,omitempty"`
-	ModelID  string                 `json:"modelID,omitempty"`
-	Time     map[string]interface{} `json:"time,omitempty"`
-	SessionID string                `json:"sessionID,omitempty"`
+	ID        string                 `json:"id"`
+	Role      string                 `json:"role"`
+	System    interface{}            `json:"system,omitempty"` // Can be string or array
+	Mode      string                 `json:"mode,omitempty"`
+	Content   interface{}            `json:"content,omitempty"`
+	Cost      float64                `json:"cost,omitempty"`
+	Tokens    map[string]interface{} `json:"tokens,omitempty"`
+	ModelID   string                 `json:"modelID,omitempty"`
+	Time      map[string]interface{} `json:"time,omitempty"`
+	SessionID string                 `json:"sessionID,omitempty"`
 }
 
 // ListSessions returns all opencode sessions for the given project.

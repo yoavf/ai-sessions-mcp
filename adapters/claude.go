@@ -224,10 +224,10 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 			// Skip caveat messages, slash commands, and other system messages
 			if strings.HasPrefix(trimmed, "Caveat:") ||
-			   strings.HasPrefix(trimmed, "<command-name>") ||
-			   strings.HasPrefix(trimmed, "<bash-input>") ||
-			   strings.HasPrefix(trimmed, "<local-command-stdout>") ||
-			   (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+				strings.HasPrefix(trimmed, "<command-name>") ||
+				strings.HasPrefix(trimmed, "<bash-input>") ||
+				strings.HasPrefix(trimmed, "<local-command-stdout>") ||
+				(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
 				// Skip and continue looking for the next user message
 				continue
 			}
@@ -387,7 +387,7 @@ func (c *ClaudeAdapter) readAllMessages(filePath string) ([]Message, error) {
 
 	// Increase buffer size for large messages
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
-	scanner.Buffer(buf, 10*1024*1024)  // Max 10MB per line
+	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 
 	for scanner.Scan() {
 		var msg claudeMessage

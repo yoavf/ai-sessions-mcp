@@ -268,10 +268,6 @@ func (o *OpencodeAdapter) getFirstUserMessageAndCount(storageDir, sessionID stri
 		}
 	}
 
-	if firstMessage == "" {
-		return "", userCount, nil
-	}
-
 	return firstMessage, userCount, nil
 }
 

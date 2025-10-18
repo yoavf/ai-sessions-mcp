@@ -41,12 +41,33 @@ type codexEntry struct {
 
 // sessionInfo holds parsed information about a Codex session.
 type sessionInfo struct {
-	ID                     string
-	CWD                    string
-	FirstUserMessage       string
-	FirstMessageTimestamp  string
-	SessionMetaTimestamp   string
-	FilePath               string
+	ID                    string
+	CWD                   string
+	FirstUserMessage      string
+	FirstMessageTimestamp string
+	SessionMetaTimestamp  string
+	FilePath              string
+	UserMessageCount      int
+}
+
+// parseCodexTimestamp parses timestamps produced by Codex rollout files.
+func parseCodexTimestamp(ts string) (time.Time, error) {
+	if ts == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, ts); err == nil {
+			return parsed, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("unsupported timestamp format: %s", ts)
 }
 
 // ListSessions returns all Codex sessions for the given project.
@@ -96,11 +117,12 @@ func (c *CodexAdapter) ListSessions(projectPath string, limit int) ([]Session, e
 		}
 
 		session := Session{
-			ID:           info.ID,
-			Source:       "codex",
-			ProjectPath:  projectPath,
-			FirstMessage: info.FirstUserMessage,
-			FilePath:     info.FilePath,
+			ID:               info.ID,
+			Source:           "codex",
+			ProjectPath:      projectPath,
+			FirstMessage:     info.FirstUserMessage,
+			UserMessageCount: info.UserMessageCount,
+			FilePath:         info.FilePath,
 		}
 
 		// Parse timestamp
@@ -108,18 +130,11 @@ func (c *CodexAdapter) ListSessions(projectPath string, limit int) ([]Session, e
 		if tsStr == "" {
 			tsStr = info.SessionMetaTimestamp
 		}
-		if tsStr != "" {
-			if ts, err := time.Parse(time.RFC3339, tsStr); err == nil {
-				session.Timestamp = ts
-			}
+		if ts, err := parseCodexTimestamp(tsStr); err == nil {
+			session.Timestamp = ts
 		}
 
 		sessions = append(sessions, session)
-
-		// Early exit if we've hit the limit
-		if limit > 0 && len(sessions) >= limit {
-			break
-		}
 	}
 
 	// Sort by timestamp (newest first)
@@ -158,11 +173,12 @@ func (c *CodexAdapter) listAllSessions(sessionDirs []string, limit int) ([]Sessi
 		}
 
 		session := Session{
-			ID:           info.ID,
-			Source:       "codex",
-			ProjectPath:  info.CWD,
-			FirstMessage: info.FirstUserMessage,
-			FilePath:     info.FilePath,
+			ID:               info.ID,
+			Source:           "codex",
+			ProjectPath:      info.CWD,
+			FirstMessage:     info.FirstUserMessage,
+			UserMessageCount: info.UserMessageCount,
+			FilePath:         info.FilePath,
 		}
 
 		// Parse timestamp
@@ -170,18 +186,11 @@ func (c *CodexAdapter) listAllSessions(sessionDirs []string, limit int) ([]Sessi
 		if tsStr == "" {
 			tsStr = info.SessionMetaTimestamp
 		}
-		if tsStr != "" {
-			if ts, err := time.Parse(time.RFC3339, tsStr); err == nil {
-				session.Timestamp = ts
-			}
+		if ts, err := parseCodexTimestamp(tsStr); err == nil {
+			session.Timestamp = ts
 		}
 
 		allSessions = append(allSessions, session)
-
-		// Early exit if we've hit the limit
-		if limit > 0 && len(allSessions) >= limit {
-			break
-		}
 	}
 
 	// Sort by timestamp (newest first)
@@ -227,7 +236,7 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
-	scanner.Buffer(buf, 10*1024*1024)  // Max 10MB per line
+	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 
 	for scanner.Scan() {
 		var entry codexEntry
@@ -267,7 +276,17 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 				if role, ok := entry.Payload["role"].(string); ok && role == "user" {
 					if content, ok := entry.Payload["content"].([]interface{}); ok {
 						text := c.extractUserText(content)
-						if !c.isSessionPrefix(text) && info.FirstUserMessage == "" {
+						if c.isSessionPrefix(text) {
+							continue
+						}
+						trimmed := strings.TrimSpace(text)
+						if trimmed == "" {
+							continue
+						}
+
+						info.UserMessageCount++
+
+						if info.FirstUserMessage == "" {
 							info.FirstUserMessage = c.extractFirstLine(text)
 							info.FirstMessageTimestamp = entry.Timestamp
 							if info.FirstMessageTimestamp == "" {
@@ -277,11 +296,6 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 					}
 				}
 			}
-		}
-
-		// Early exit if we have everything we need
-		if info.CWD != "" && info.FirstUserMessage != "" {
-			break
 		}
 	}
 
@@ -425,10 +439,8 @@ func (c *CodexAdapter) readAllMessages(filePath string) ([]Message, error) {
 				}
 
 				// Parse timestamp
-				if entry.Timestamp != "" {
-					if ts, err := time.Parse(time.RFC3339, entry.Timestamp); err == nil {
-						message.Timestamp = ts
-					}
+				if ts, err := parseCodexTimestamp(entry.Timestamp); err == nil {
+					message.Timestamp = ts
 				}
 
 				// Extract content

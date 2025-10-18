@@ -22,6 +22,9 @@ type Session struct {
 	// Timestamp is when the session started or first message was sent
 	Timestamp time.Time `json:"timestamp"`
 
+	// UserMessageCount is the number of user-authored messages in the session
+	UserMessageCount int `json:"user_message_count,omitempty"`
+
 	// FilePath is the absolute path to the session file on disk
 	FilePath string `json:"file_path"`
 

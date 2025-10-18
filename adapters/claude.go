@@ -39,6 +39,7 @@ type claudeMessage struct {
 	Role        string                 `json:"role,omitempty"`
 	Content     interface{}            `json:"content,omitempty"`
 	Message     *claudeNestedMessage   `json:"message,omitempty"` // Nested message format
+	CWD         string                 `json:"cwd,omitempty"`
 	LeafUUID    string                 `json:"leafUuid,omitempty"`
 	IsSidechain bool                   `json:"isSidechain,omitempty"` // Skip sidechain messages
 	Metadata    map[string]interface{} `json:"-"`                     // Capture any extra fields
@@ -137,11 +138,7 @@ func (c *ClaudeAdapter) listAllSessions(claudeProjectsDir string, limit int) ([]
 			continue
 		}
 
-		// Reverse-engineer project path from directory name
-		// Directory names start with a dash, e.g., "-Users-yoavfarhi-dev-project"
-		projectPath := strings.ReplaceAll(dir.Name(), "-", "/")
-		// Remove leading slash if present
-		projectPath = strings.TrimPrefix(projectPath, "/")
+		projectPath := filepath.Join(claudeProjectsDir, dir.Name())
 
 		for _, filePath := range files {
 			session, err := c.parseSessionMetadata(filePath, projectPath)
@@ -187,6 +184,8 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 	scanner := bufio.NewScanner(file)
 	foundFirstMessage := false
+	userMessageCount := 0
+	projectPathFromLog := ""
 
 	// Read through the file to find summary and first user message
 	for scanner.Scan() {
@@ -200,8 +199,12 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 			session.Summary = msg.Summary
 		}
 
+		if projectPathFromLog == "" && msg.CWD != "" {
+			projectPathFromLog = filepath.Clean(msg.CWD)
+		}
+
 		// Capture first user message (skip system messages and sidechain messages)
-		if msg.Type == "user" && !foundFirstMessage {
+		if msg.Type == "user" {
 			// Skip sidechain messages (like "Warmup")
 			if msg.IsSidechain {
 				continue
@@ -224,17 +227,20 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 			// Skip caveat messages, slash commands, and other system messages
 			if strings.HasPrefix(trimmed, "Caveat:") ||
-			   strings.HasPrefix(trimmed, "<command-name>") ||
-			   strings.HasPrefix(trimmed, "<bash-input>") ||
-			   strings.HasPrefix(trimmed, "<local-command-stdout>") ||
-			   (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+				strings.HasPrefix(trimmed, "<command-name>") ||
+				strings.HasPrefix(trimmed, "<bash-input>") ||
+				strings.HasPrefix(trimmed, "<local-command-stdout>") ||
+				(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
 				// Skip and continue looking for the next user message
 				continue
 			}
 
-			session.FirstMessage = firstLine
-			foundFirstMessage = true
-			break // We have what we need
+			userMessageCount++
+
+			if !foundFirstMessage {
+				session.FirstMessage = firstLine
+				foundFirstMessage = true
+			}
 		}
 	}
 
@@ -246,6 +252,12 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 	if session.FirstMessage == "" {
 		session.FirstMessage = "(Empty session)"
 	}
+
+	if projectPathFromLog != "" {
+		session.ProjectPath = projectPathFromLog
+	}
+
+	session.UserMessageCount = userMessageCount
 
 	return session, nil
 }
@@ -387,7 +399,7 @@ func (c *ClaudeAdapter) readAllMessages(filePath string) ([]Message, error) {
 
 	// Increase buffer size for large messages
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
-	scanner.Buffer(buf, 10*1024*1024)  // Max 10MB per line
+	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 
 	for scanner.Scan() {
 		var msg claudeMessage

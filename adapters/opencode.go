@@ -59,16 +59,16 @@ type opencodeSession struct {
 
 // opencodeMessage represents a message file in storage/message/[SESSION_ID]/
 type opencodeMessage struct {
-	ID       string                 `json:"id"`
-	Role     string                 `json:"role"`
-	System   interface{}            `json:"system,omitempty"` // Can be string or array
-	Mode     string                 `json:"mode,omitempty"`
-	Content  interface{}            `json:"content,omitempty"`
-	Cost     float64                `json:"cost,omitempty"`
-	Tokens   map[string]interface{} `json:"tokens,omitempty"`
-	ModelID  string                 `json:"modelID,omitempty"`
-	Time     map[string]interface{} `json:"time,omitempty"`
-	SessionID string                `json:"sessionID,omitempty"`
+	ID        string                 `json:"id"`
+	Role      string                 `json:"role"`
+	System    interface{}            `json:"system,omitempty"` // Can be string or array
+	Mode      string                 `json:"mode,omitempty"`
+	Content   interface{}            `json:"content,omitempty"`
+	Cost      float64                `json:"cost,omitempty"`
+	Tokens    map[string]interface{} `json:"tokens,omitempty"`
+	ModelID   string                 `json:"modelID,omitempty"`
+	Time      map[string]interface{} `json:"time,omitempty"`
+	SessionID string                 `json:"sessionID,omitempty"`
 }
 
 // ListSessions returns all opencode sessions for the given project.
@@ -208,19 +208,21 @@ func (o *OpencodeAdapter) listProjectSessions(storageDir, projectID, worktree st
 		}
 
 		// Get first message content
-		firstMessage, err := o.getFirstUserMessage(storageDir, sess.ID)
+		firstMessage, userCount, err := o.getFirstUserMessageAndCount(storageDir, sess.ID)
 		if err != nil {
 			firstMessage = "" // Continue even if we can't get first message
+			userCount = 0
 		}
 
 		session := Session{
-			ID:           sess.ID,
-			Source:       "opencode",
-			ProjectPath:  worktree,
-			FirstMessage: firstMessage,
-			Summary:      sess.Title,
-			Timestamp:    time.UnixMilli(sess.Time.Created),
-			FilePath:     file,
+			ID:               sess.ID,
+			Source:           "opencode",
+			ProjectPath:      worktree,
+			FirstMessage:     firstMessage,
+			Summary:          sess.Title,
+			Timestamp:        time.UnixMilli(sess.Time.Created),
+			FilePath:         file,
+			UserMessageCount: userCount,
 		}
 
 		sessions = append(sessions, session)
@@ -229,16 +231,19 @@ func (o *OpencodeAdapter) listProjectSessions(storageDir, projectID, worktree st
 	return sessions, nil
 }
 
-// getFirstUserMessage extracts the first user message from a session
-func (o *OpencodeAdapter) getFirstUserMessage(storageDir, sessionID string) (string, error) {
+// getFirstUserMessageAndCount extracts the first user message from a session and counts all user messages.
+func (o *OpencodeAdapter) getFirstUserMessageAndCount(storageDir, sessionID string) (string, int, error) {
 	messageDir := filepath.Join(storageDir, "message", sessionID)
 	files, err := filepath.Glob(filepath.Join(messageDir, "msg_*.json"))
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	// Sort by filename (contains timestamp-like component)
 	sort.Strings(files)
+
+	firstMessage := ""
+	userCount := 0
 
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -255,12 +260,19 @@ func (o *OpencodeAdapter) getFirstUserMessage(storageDir, sessionID string) (str
 		if msg.Role == "user" {
 			content := o.extractMessageContent(msg.Content)
 			if content != "" {
-				return o.extractFirstLine(content), nil
+				userCount++
+				if firstMessage == "" {
+					firstMessage = o.extractFirstLine(content)
+				}
 			}
 		}
 	}
 
-	return "", nil
+	if firstMessage == "" {
+		return "", userCount, nil
+	}
+
+	return firstMessage, userCount, nil
 }
 
 // extractMessageContent converts message content to string

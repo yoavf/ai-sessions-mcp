@@ -282,17 +282,22 @@ func indexSessions(adaptersMap map[string]adapters.SessionAdapter, cache *search
 			}
 
 			// Combine all message content
-			var contentBuilder strings.Builder
-			contentBuilder.WriteString(session.FirstMessage)
-			contentBuilder.WriteString(" ")
-			contentBuilder.WriteString(session.Summary)
-			for _, msg := range messages {
-				contentBuilder.WriteString(" ")
-				contentBuilder.WriteString(msg.Content)
+			contentParts := make([]string, 0, len(messages)+2)
+			if session.FirstMessage != "" {
+				contentParts = append(contentParts, session.FirstMessage)
 			}
+			if session.Summary != "" {
+				contentParts = append(contentParts, session.Summary)
+			}
+			for _, msg := range messages {
+				if msg.Content != "" {
+					contentParts = append(contentParts, msg.Content)
+				}
+			}
+			content := strings.Join(contentParts, " ")
 
 			// Index the session
-			if err := cache.IndexSession(session, contentBuilder.String()); err != nil {
+			if err := cache.IndexSession(session, content); err != nil {
 				log.Printf("Error indexing session %s: %v", session.ID, err)
 				continue
 			}

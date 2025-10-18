@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -165,11 +166,13 @@ func (c *ClaudeAdapter) listAllSessions(claudeProjectsDir string, limit int) ([]
 // parseSessionMetadata extracts metadata from a Claude Code session file.
 // It reads the first few lines to get the summary and first user message.
 func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Session, error) {
-	file, err := os.Open(filePath)
+	// Performance optimization: Quick pre-scan using fast byte search
+	// to detect if there are any user messages before doing expensive JSON parsing.
+	// This allows us to skip files with no user messages entirely.
+	fileData, err := os.ReadFile(filePath)
 	if err != nil {
-		return Session{}, fmt.Errorf("failed to open session file: %w", err)
+		return Session{}, fmt.Errorf("failed to read session file: %w", err)
 	}
-	defer file.Close()
 
 	var session Session
 	session.ID = strings.TrimSuffix(filepath.Base(filePath), ".jsonl")
@@ -182,7 +185,18 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 		session.Timestamp = stat.ModTime()
 	}
 
-	scanner := bufio.NewScanner(file)
+	// Fast check: does this file contain ANY user messages?
+	// We look for `"type":"user"` which appears in user message entries.
+	// This is much faster than JSON parsing and allows us to skip empty sessions early.
+	hasUserMessages := bytes.Contains(fileData, []byte(`"type":"user"`))
+	if !hasUserMessages {
+		session.FirstMessage = "(Empty session)"
+		session.UserMessageCount = 0
+		return session, nil
+	}
+
+	// File has user messages - do full JSON parse to get exact count and first message
+	scanner := bufio.NewScanner(bytes.NewReader(fileData))
 	foundFirstMessage := false
 	userMessageCount := 0
 	projectPathFromLog := ""

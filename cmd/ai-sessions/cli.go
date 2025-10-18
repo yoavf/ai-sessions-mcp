@@ -464,24 +464,26 @@ func selectSessionInteractively() (string, error) {
 	// Get terminal width for formatting
 	termWidth := getTerminalWidth()
 
-	// Create display items, skipping sessions without user messages
-	items := make([]string, 0, len(sessions))
-	filtered := make([]adapters.Session, 0, len(sessions))
+	// Filter sessions in-place to remove those with no user messages
+	// This is more memory-efficient than creating a new slice
+	n := 0
 	for _, session := range sessions {
-		// Skip sessions without user messages
-		if session.UserMessageCount == 0 {
-			continue
+		if session.UserMessageCount > 0 {
+			sessions[n] = session
+			n++
 		}
-		row := formatSessionRow(session, termWidth)
-		filtered = append(filtered, session)
-		items = append(items, row)
 	}
+	sessions = sessions[:n]
 
-	// Trim items slice to actual entries, removing zero-value tail
-	if len(filtered) == 0 {
+	if len(sessions) == 0 {
 		return "", fmt.Errorf("no sessions with user messages found")
 	}
-	sessions = filtered
+
+	// Create display items from the filtered sessions
+	items := make([]string, len(sessions))
+	for i, session := range sessions {
+		items[i] = formatSessionRow(session, termWidth)
+	}
 
 	// Print title
 	fmt.Println()

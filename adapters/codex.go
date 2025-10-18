@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -224,17 +225,72 @@ func (c *CodexAdapter) findRolloutFiles(root string) ([]string, error) {
 // scanRolloutFile scans a Codex rollout file to extract session information.
 // It reads until it finds both the CWD and the first user message.
 func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo, error) {
-	file, err := os.Open(filePath)
+	// Performance optimization: Quick pre-scan using fast byte search
+	// to detect if there are any user messages before doing expensive JSON parsing.
+	fileData, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open rollout file: %w", err)
+		return nil, fmt.Errorf("failed to read rollout file: %w", err)
 	}
-	defer file.Close()
 
 	info := &sessionInfo{
 		FilePath: filePath,
 	}
 
-	scanner := bufio.NewScanner(file)
+	// Fast check: does this file contain ANY user messages?
+	// We look for `"role":"user"` which appears in user message entries.
+	// This is much faster than JSON parsing.
+	hasUserMessages := bytes.Contains(fileData, []byte(`"role":"user"`))
+
+	// If no user messages, we still need CWD/metadata, but can skip detailed parsing
+	if !hasUserMessages {
+		// Quick scan for just CWD and session metadata
+		scanner := bufio.NewScanner(bytes.NewReader(fileData))
+		buf := make([]byte, 0, 1024*1024)
+		scanner.Buffer(buf, 10*1024*1024)
+
+		for scanner.Scan() {
+			var entry codexEntry
+			if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+				continue
+			}
+
+			switch entry.Type {
+			case "session_meta":
+				if cwd, ok := entry.Payload["cwd"].(string); ok && info.CWD == "" {
+					if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+						info.CWD = resolved
+					} else {
+						info.CWD = filepath.Clean(cwd)
+					}
+				}
+				if id, ok := entry.Payload["id"].(string); ok && info.ID == "" {
+					info.ID = id
+				}
+				if ts, ok := entry.Payload["timestamp"].(string); ok && info.SessionMetaTimestamp == "" {
+					info.SessionMetaTimestamp = ts
+				}
+			case "turn_context":
+				if cwd, ok := entry.Payload["cwd"].(string); ok && info.CWD == "" {
+					if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+						info.CWD = resolved
+					} else {
+						info.CWD = filepath.Clean(cwd)
+					}
+				}
+			}
+
+			// Early exit once we have CWD and session metadata
+			if info.CWD != "" && info.ID != "" {
+				break
+			}
+		}
+
+		info.UserMessageCount = 0
+		return info, nil
+	}
+
+	// File has user messages - do full JSON parse to get exact count and first message
+	scanner := bufio.NewScanner(bytes.NewReader(fileData))
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
 	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 

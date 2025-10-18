@@ -314,9 +314,7 @@ func getProjectName(projectPath string) string {
 			}
 			return relativePath
 		}
-	}
 
-	if err == nil {
 		claudeRoot := filepath.Join(homeDir, ".claude", "projects") + string(filepath.Separator)
 		if strings.HasPrefix(projectPath, claudeRoot) {
 			return strings.TrimPrefix(projectPath, claudeRoot)
@@ -390,11 +388,6 @@ func formatSessionRow(s adapters.Session, width int) string {
 	project := getProjectName(s.ProjectPath)
 	agent := getAgentDisplayName(s.Source)
 	userMsgCol := fmt.Sprintf("%d", s.UserMessageCount)
-
-	// If no user messages, omit this session from display
-	if s.UserMessageCount == 0 {
-		return ""
-	}
 
 	// Calculate available space for message
 	// prefix(2) + time(12) + agent(12) + userMsgs(5) + project(28) + spacing(10) = 69
@@ -475,10 +468,11 @@ func selectSessionInteractively() (string, error) {
 	items := make([]string, 0, len(sessions))
 	filtered := make([]adapters.Session, 0, len(sessions))
 	for _, session := range sessions {
-		row := formatSessionRow(session, termWidth)
-		if row == "" {
+		// Skip sessions without user messages
+		if session.UserMessageCount == 0 {
 			continue
 		}
+		row := formatSessionRow(session, termWidth)
 		filtered = append(filtered, session)
 		items = append(items, row)
 	}

@@ -276,11 +276,8 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 				if role, ok := entry.Payload["role"].(string); ok && role == "user" {
 					if content, ok := entry.Payload["content"].([]interface{}); ok {
 						text := c.extractUserText(content)
-						if c.isSessionPrefix(text) {
-							continue
-						}
 						trimmed := strings.TrimSpace(text)
-						if trimmed == "" {
+						if trimmed == "" || c.isSessionPrefix(trimmed) {
 							continue
 						}
 
@@ -330,12 +327,12 @@ func (c *CodexAdapter) extractUserText(content []interface{}) string {
 }
 
 // isSessionPrefix checks if a message is a session prefix (user_instructions or environment_context).
+// The text parameter is expected to already be trimmed.
 func (c *CodexAdapter) isSessionPrefix(text string) bool {
 	if text == "" {
 		return false
 	}
-	trimmed := strings.TrimSpace(text)
-	lower := strings.ToLower(trimmed)
+	lower := strings.ToLower(text)
 	return (strings.HasPrefix(lower, "<user_instructions>") && strings.HasSuffix(lower, "</user_instructions>")) ||
 		(strings.HasPrefix(lower, "<environment_context>") && strings.HasSuffix(lower, "</environment_context>"))
 }
@@ -455,7 +452,7 @@ func (c *CodexAdapter) readAllMessages(filePath string) ([]Message, error) {
 				}
 
 				// Skip session prefix messages
-				if role == "user" && c.isSessionPrefix(message.Content) {
+				if role == "user" && c.isSessionPrefix(strings.TrimSpace(message.Content)) {
 					continue
 				}
 

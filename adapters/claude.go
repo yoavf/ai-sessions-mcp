@@ -224,10 +224,10 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 			// Skip caveat messages, slash commands, and other system messages
 			if strings.HasPrefix(trimmed, "Caveat:") ||
-			   strings.HasPrefix(trimmed, "<command-name>") ||
-			   strings.HasPrefix(trimmed, "<bash-input>") ||
-			   strings.HasPrefix(trimmed, "<local-command-stdout>") ||
-			   (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+				strings.HasPrefix(trimmed, "<command-name>") ||
+				strings.HasPrefix(trimmed, "<bash-input>") ||
+				strings.HasPrefix(trimmed, "<local-command-stdout>") ||
+				(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
 				// Skip and continue looking for the next user message
 				continue
 			}
@@ -265,21 +265,27 @@ func stripSystemXMLTags(text string) string {
 		"local-command-stdout",
 	}
 
-	for _, tag := range systemTags {
-		openTag := "<" + tag + ">"
-		closeTag := "</" + tag + ">"
+	for {
+		trimmed := strings.TrimSpace(text)
+		removed := false
 
-		// Check if text starts with this tag
-		if strings.HasPrefix(text, openTag) {
-			// Find the closing tag
-			closeIdx := strings.Index(text, closeTag)
-			if closeIdx != -1 {
-				// Strip everything up to and including the closing tag
-				text = text[closeIdx+len(closeTag):]
-				text = strings.TrimSpace(text)
-				// Recursively check for more tags
-				return stripSystemXMLTags(text)
+		for _, tag := range systemTags {
+			openTag := "<" + tag + ">"
+			closeTag := "</" + tag + ">"
+
+			if strings.HasPrefix(trimmed, openTag) {
+				closeIdx := strings.Index(trimmed, closeTag)
+				if closeIdx != -1 {
+					trimmed = strings.TrimSpace(trimmed[closeIdx+len(closeTag):])
+					removed = true
+					break // Restart scanning with updated text
+				}
 			}
+		}
+
+		text = trimmed
+		if !removed {
+			break
 		}
 	}
 
@@ -387,7 +393,7 @@ func (c *ClaudeAdapter) readAllMessages(filePath string) ([]Message, error) {
 
 	// Increase buffer size for large messages
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
-	scanner.Buffer(buf, 10*1024*1024)  // Max 10MB per line
+	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 
 	for scanner.Scan() {
 		var msg claudeMessage

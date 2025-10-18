@@ -162,6 +162,12 @@ Retrieves full session content with pagination.
 - `page` (optional): Page number (default: 0)
 - `page_size` (optional): Messages per page (default: 20)
 
+## Development
+
+To keep formatting consistent and catch regressions early:
+
+- Install [pre-commit](https://pre-commit.com/) and run `pre-commit install` to enable hooks (`gofmt`, `go vet`, `go test`).
+- All pushes and pull requests run the GitHub Actions workflow (`.github/workflows/build.yml`), which checks formatting, runs `go vet`, builds the binary, and executes `go test -cover ./...`.
 
 ## License
 

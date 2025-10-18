@@ -41,12 +41,12 @@ type codexEntry struct {
 
 // sessionInfo holds parsed information about a Codex session.
 type sessionInfo struct {
-	ID                     string
-	CWD                    string
-	FirstUserMessage       string
-	FirstMessageTimestamp  string
-	SessionMetaTimestamp   string
-	FilePath               string
+	ID                    string
+	CWD                   string
+	FirstUserMessage      string
+	FirstMessageTimestamp string
+	SessionMetaTimestamp  string
+	FilePath              string
 }
 
 // ListSessions returns all Codex sessions for the given project.
@@ -227,7 +227,7 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
-	scanner.Buffer(buf, 10*1024*1024)  // Max 10MB per line
+	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 
 	for scanner.Scan() {
 		var entry codexEntry

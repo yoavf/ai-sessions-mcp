@@ -306,12 +306,12 @@ func TestUploadRequestWithoutTitle(t *testing.T) {
 
 func TestHandleUploadCommandArgParsing(t *testing.T) {
 	tests := []struct {
-		name         string
-		args         []string
-		wantFile     string
-		wantTitle    string
-		wantURL      string
-		wantErr      bool
+		name      string
+		args      []string
+		wantFile  string
+		wantTitle string
+		wantURL   string
+		wantErr   bool
 	}{
 		{
 			name:     "file only",

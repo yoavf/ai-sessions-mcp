@@ -1,0 +1,20 @@
+repos:
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: bash -lc 'if [ "$#" -gt 0 ]; then gofmt -w "$@"; fi'
+        language: system
+        types: [go]
+      - id: go-vet
+        name: go vet
+        entry: bash -lc 'go vet ./...'
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: go-test
+        name: go test
+        entry: bash -lc 'GOCACHE=${GOCACHE:-$(pwd)/.pre-commit-gocache} go test ./...'
+        language: system
+        pass_filenames: false
+        always_run: true

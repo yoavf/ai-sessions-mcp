@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -338,10 +339,30 @@ func getProjectName(projectPath string) string {
 			relativePath := strings.TrimPrefix(projectPath, homeDirWithSeparator)
 			return strings.ReplaceAll(relativePath, string(filepath.Separator), "-")
 		}
+
+		claudeRoot := filepath.Join(homeDir, ".claude", "projects") + string(filepath.Separator)
+		if strings.HasPrefix(projectPath, claudeRoot) {
+			return strings.ReplaceAll(strings.TrimPrefix(projectPath, claudeRoot), string(filepath.Separator), "-")
+		}
 	}
 
 	// Fallback: convert slashes to dashes and use the base name
 	return strings.ReplaceAll(filepath.Base(projectPath), string(filepath.Separator), "-")
+}
+
+// getAgentDisplayName returns a friendly name for the agent source.
+func getAgentDisplayName(source string) string {
+	switch source {
+	case "claude":
+		return "Claude Code"
+	case "codex":
+		return "Codex"
+	default:
+		if source == "" {
+			return "Unknown"
+		}
+		return source
+	}
 }
 
 // cleanFirstMessage trims and truncates the first message
@@ -390,10 +411,12 @@ func truncateStringStart(s string, maxLen int) string {
 func formatSessionRow(s adapters.Session, width int) string {
 	timeStr := formatRelativeTime(s.Timestamp)
 	project := getProjectName(s.ProjectPath)
+	agent := getAgentDisplayName(s.Source)
+	userMsgCol := fmt.Sprintf("%d", s.UserMessageCount)
 
 	// Calculate available space for message
-	// prefix(2) + time(14) + project(42) + spacing(8) = 66
-	const fixedWidth = 66
+	// prefix(2) + time(12) + agent(12) + userMsgs(5) + project(28) + spacing(10) = 69
+	const fixedWidth = 69
 	messageWidth := width - fixedWidth
 	if messageWidth < 20 {
 		messageWidth = 20 // Minimum message width
@@ -403,18 +426,19 @@ func formatSessionRow(s adapters.Session, width int) string {
 
 	// Use padding for alignment
 	timeCol := truncateString(timeStr, 12)
+	agentCol := truncateString(agent, 12)
 	// For project names, truncate from the start (show the end with ellipsis at the start)
-	projectCol := truncateStringStart(project, 40)
+	projectCol := truncateStringStart(project, 28)
 
-	return fmt.Sprintf("  %-12s    %-40s    %s", timeCol, projectCol, message)
+	return fmt.Sprintf("  %-12s  %-12s  %5s  %-28s  %s", timeCol, agentCol, userMsgCol, projectCol, message)
 }
 
 // formatTableHeader formats the table header row
 func formatTableHeader() string {
-	return fmt.Sprintf("  %-12s    %-40s    %s", "TIME", "PROJECT", "MESSAGE")
+	return fmt.Sprintf("  %-12s  %-12s  %5s  %-28s  %s", "TIME", "AGENT", "#USER", "PROJECT", "MESSAGE")
 }
 
-// selectSessionInteractively displays an interactive list of recent Claude Code sessions
+// selectSessionInteractively displays an interactive list of recent sessions
 // and returns the file path of the selected session
 func selectSessionInteractively() (string, error) {
 	// Initialize Claude adapter
@@ -423,20 +447,64 @@ func selectSessionInteractively() (string, error) {
 		return "", fmt.Errorf("failed to initialize Claude adapter: %w", err)
 	}
 
-	// List recent sessions (limit to 50)
+	// List recent sessions (limit to 50 per adapter)
 	sessions, err := claudeAdapter.ListSessions("", 50)
 	if err != nil {
 		return "", fmt.Errorf("failed to list sessions: %w", err)
 	}
 
+	// Try to load Codex sessions (ignore errors to keep Claude flow working)
+	if codexAdapter, codexErr := adapters.NewCodexAdapter(); codexErr == nil {
+		if codexSessions, listErr := codexAdapter.ListSessions("", 50); listErr == nil {
+			sessions = append(sessions, codexSessions...)
+		}
+	}
+
 	if len(sessions) == 0 {
-		return "", fmt.Errorf("no Claude Code sessions found")
+		return "", fmt.Errorf("no sessions found")
+	}
+
+	// Sort sessions by timestamp (newest first), putting zero timestamps last
+	sort.SliceStable(sessions, func(i, j int) bool {
+		ti := sessions[i].Timestamp
+		tj := sessions[j].Timestamp
+
+		if ti.IsZero() && tj.IsZero() {
+			return sessions[i].FirstMessage > sessions[j].FirstMessage
+		}
+		if ti.IsZero() {
+			return false
+		}
+		if tj.IsZero() {
+			return true
+		}
+		return ti.After(tj)
+	})
+
+	// Limit to 50 sessions overall to keep the list manageable
+	if len(sessions) > 50 {
+		sessions = sessions[:50]
 	}
 
 	// Get terminal width for formatting
 	termWidth := getTerminalWidth()
 
-	// Create display items
+	// Filter sessions in-place to remove those with no user messages
+	// This is more memory-efficient than creating a new slice
+	n := 0
+	for _, session := range sessions {
+		if session.UserMessageCount > 0 {
+			sessions[n] = session
+			n++
+		}
+	}
+	sessions = sessions[:n]
+
+	if len(sessions) == 0 {
+		return "", fmt.Errorf("no sessions with user messages found")
+	}
+
+	// Create display items from the filtered sessions
 	items := make([]string, len(sessions))
 	for i, session := range sessions {
 		items[i] = formatSessionRow(session, termWidth)
@@ -444,7 +512,7 @@ func selectSessionInteractively() (string, error) {
 
 	// Print title
 	fmt.Println()
-	fmt.Println("Select a Claude Code session to upload")
+	fmt.Println("Select a session to upload")
 	fmt.Println("Use the arrow keys to navigate: ↓ ↑ → ←  and / toggles search")
 	fmt.Println()
 	fmt.Println("\033[2m" + formatTableHeader() + "\033[0m") // Dim color for header
@@ -468,7 +536,8 @@ func selectSessionInteractively() (string, error) {
 			session := sessions[index]
 			input = strings.ToLower(input)
 			return strings.Contains(strings.ToLower(session.FirstMessage), input) ||
-				strings.Contains(strings.ToLower(session.ProjectPath), input)
+				strings.Contains(strings.ToLower(session.ProjectPath), input) ||
+				strings.Contains(strings.ToLower(getAgentDisplayName(session.Source)), input)
 		},
 	}
 
@@ -486,6 +555,8 @@ func selectSessionInteractively() (string, error) {
 	fmt.Println("Selected session:")
 	fmt.Printf("  %s\n", selectedSession.FirstMessage)
 	fmt.Printf("  Project: %s\n", getProjectName(selectedSession.ProjectPath))
+	fmt.Printf("  Agent: %s\n", getAgentDisplayName(selectedSession.Source))
+	fmt.Printf("  User messages: %d\n", selectedSession.UserMessageCount)
 	fmt.Printf("  Time: %s\n", formatRelativeTime(selectedSession.Timestamp))
 	fmt.Printf("  File: %s\n", filepath.Base(selectedSession.FilePath))
 	fmt.Println()

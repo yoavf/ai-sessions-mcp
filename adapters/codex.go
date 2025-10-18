@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,6 +48,27 @@ type sessionInfo struct {
 	FirstMessageTimestamp string
 	SessionMetaTimestamp  string
 	FilePath              string
+	UserMessageCount      int
+}
+
+// parseCodexTimestamp parses timestamps produced by Codex rollout files.
+func parseCodexTimestamp(ts string) (time.Time, error) {
+	if ts == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, ts); err == nil {
+			return parsed, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("unsupported timestamp format: %s", ts)
 }
 
 // ListSessions returns all Codex sessions for the given project.
@@ -96,11 +118,12 @@ func (c *CodexAdapter) ListSessions(projectPath string, limit int) ([]Session, e
 		}
 
 		session := Session{
-			ID:           info.ID,
-			Source:       "codex",
-			ProjectPath:  projectPath,
-			FirstMessage: info.FirstUserMessage,
-			FilePath:     info.FilePath,
+			ID:               info.ID,
+			Source:           "codex",
+			ProjectPath:      projectPath,
+			FirstMessage:     info.FirstUserMessage,
+			UserMessageCount: info.UserMessageCount,
+			FilePath:         info.FilePath,
 		}
 
 		// Parse timestamp
@@ -108,18 +131,11 @@ func (c *CodexAdapter) ListSessions(projectPath string, limit int) ([]Session, e
 		if tsStr == "" {
 			tsStr = info.SessionMetaTimestamp
 		}
-		if tsStr != "" {
-			if ts, err := time.Parse(time.RFC3339, tsStr); err == nil {
-				session.Timestamp = ts
-			}
+		if ts, err := parseCodexTimestamp(tsStr); err == nil {
+			session.Timestamp = ts
 		}
 
 		sessions = append(sessions, session)
-
-		// Early exit if we've hit the limit
-		if limit > 0 && len(sessions) >= limit {
-			break
-		}
 	}
 
 	// Sort by timestamp (newest first)
@@ -158,11 +174,12 @@ func (c *CodexAdapter) listAllSessions(sessionDirs []string, limit int) ([]Sessi
 		}
 
 		session := Session{
-			ID:           info.ID,
-			Source:       "codex",
-			ProjectPath:  info.CWD,
-			FirstMessage: info.FirstUserMessage,
-			FilePath:     info.FilePath,
+			ID:               info.ID,
+			Source:           "codex",
+			ProjectPath:      info.CWD,
+			FirstMessage:     info.FirstUserMessage,
+			UserMessageCount: info.UserMessageCount,
+			FilePath:         info.FilePath,
 		}
 
 		// Parse timestamp
@@ -170,18 +187,11 @@ func (c *CodexAdapter) listAllSessions(sessionDirs []string, limit int) ([]Sessi
 		if tsStr == "" {
 			tsStr = info.SessionMetaTimestamp
 		}
-		if tsStr != "" {
-			if ts, err := time.Parse(time.RFC3339, tsStr); err == nil {
-				session.Timestamp = ts
-			}
+		if ts, err := parseCodexTimestamp(tsStr); err == nil {
+			session.Timestamp = ts
 		}
 
 		allSessions = append(allSessions, session)
-
-		// Early exit if we've hit the limit
-		if limit > 0 && len(allSessions) >= limit {
-			break
-		}
 	}
 
 	// Sort by timestamp (newest first)
@@ -215,17 +225,72 @@ func (c *CodexAdapter) findRolloutFiles(root string) ([]string, error) {
 // scanRolloutFile scans a Codex rollout file to extract session information.
 // It reads until it finds both the CWD and the first user message.
 func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo, error) {
-	file, err := os.Open(filePath)
+	// Performance optimization: Quick pre-scan using fast byte search
+	// to detect if there are any user messages before doing expensive JSON parsing.
+	fileData, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open rollout file: %w", err)
+		return nil, fmt.Errorf("failed to read rollout file: %w", err)
 	}
-	defer file.Close()
 
 	info := &sessionInfo{
 		FilePath: filePath,
 	}
 
-	scanner := bufio.NewScanner(file)
+	// Fast check: does this file contain ANY user messages?
+	// We look for `"role":"user"` which appears in user message entries.
+	// This is much faster than JSON parsing.
+	hasUserMessages := bytes.Contains(fileData, []byte(`"role":"user"`))
+
+	// If no user messages, we still need CWD/metadata, but can skip detailed parsing
+	if !hasUserMessages {
+		// Quick scan for just CWD and session metadata
+		scanner := bufio.NewScanner(bytes.NewReader(fileData))
+		buf := make([]byte, 0, 1024*1024)
+		scanner.Buffer(buf, 10*1024*1024)
+
+		for scanner.Scan() {
+			var entry codexEntry
+			if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+				continue
+			}
+
+			switch entry.Type {
+			case "session_meta":
+				if cwd, ok := entry.Payload["cwd"].(string); ok && info.CWD == "" {
+					if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+						info.CWD = resolved
+					} else {
+						info.CWD = filepath.Clean(cwd)
+					}
+				}
+				if id, ok := entry.Payload["id"].(string); ok && info.ID == "" {
+					info.ID = id
+				}
+				if ts, ok := entry.Payload["timestamp"].(string); ok && info.SessionMetaTimestamp == "" {
+					info.SessionMetaTimestamp = ts
+				}
+			case "turn_context":
+				if cwd, ok := entry.Payload["cwd"].(string); ok && info.CWD == "" {
+					if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+						info.CWD = resolved
+					} else {
+						info.CWD = filepath.Clean(cwd)
+					}
+				}
+			}
+
+			// Early exit once we have CWD and session metadata
+			if info.CWD != "" && info.ID != "" {
+				break
+			}
+		}
+
+		info.UserMessageCount = 0
+		return info, nil
+	}
+
+	// File has user messages - do full JSON parse to get exact count and first message
+	scanner := bufio.NewScanner(bytes.NewReader(fileData))
 	buf := make([]byte, 0, 1024*1024) // 1MB buffer
 	scanner.Buffer(buf, 10*1024*1024) // Max 10MB per line
 
@@ -267,7 +332,14 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 				if role, ok := entry.Payload["role"].(string); ok && role == "user" {
 					if content, ok := entry.Payload["content"].([]interface{}); ok {
 						text := c.extractUserText(content)
-						if !c.isSessionPrefix(text) && info.FirstUserMessage == "" {
+						trimmed := strings.TrimSpace(text)
+						if trimmed == "" || c.isSessionPrefix(trimmed) {
+							continue
+						}
+
+						info.UserMessageCount++
+
+						if info.FirstUserMessage == "" {
 							info.FirstUserMessage = c.extractFirstLine(text)
 							info.FirstMessageTimestamp = entry.Timestamp
 							if info.FirstMessageTimestamp == "" {
@@ -277,11 +349,6 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 					}
 				}
 			}
-		}
-
-		// Early exit if we have everything we need
-		if info.CWD != "" && info.FirstUserMessage != "" {
-			break
 		}
 	}
 
@@ -316,12 +383,12 @@ func (c *CodexAdapter) extractUserText(content []interface{}) string {
 }
 
 // isSessionPrefix checks if a message is a session prefix (user_instructions or environment_context).
+// The text parameter is expected to already be trimmed.
 func (c *CodexAdapter) isSessionPrefix(text string) bool {
 	if text == "" {
 		return false
 	}
-	trimmed := strings.TrimSpace(text)
-	lower := strings.ToLower(trimmed)
+	lower := strings.ToLower(text)
 	return (strings.HasPrefix(lower, "<user_instructions>") && strings.HasSuffix(lower, "</user_instructions>")) ||
 		(strings.HasPrefix(lower, "<environment_context>") && strings.HasSuffix(lower, "</environment_context>"))
 }
@@ -425,10 +492,8 @@ func (c *CodexAdapter) readAllMessages(filePath string) ([]Message, error) {
 				}
 
 				// Parse timestamp
-				if entry.Timestamp != "" {
-					if ts, err := time.Parse(time.RFC3339, entry.Timestamp); err == nil {
-						message.Timestamp = ts
-					}
+				if ts, err := parseCodexTimestamp(entry.Timestamp); err == nil {
+					message.Timestamp = ts
 				}
 
 				// Extract content
@@ -443,7 +508,7 @@ func (c *CodexAdapter) readAllMessages(filePath string) ([]Message, error) {
 				}
 
 				// Skip session prefix messages
-				if role == "user" && c.isSessionPrefix(message.Content) {
+				if role == "user" && c.isSessionPrefix(strings.TrimSpace(message.Content)) {
 					continue
 				}
 

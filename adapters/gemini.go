@@ -193,13 +193,19 @@ func (g *GeminiAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 		}
 	}
 
-	// Extract first user message
+	// Extract first user message and count all user messages
+	userCount := 0
 	for _, msg := range geminiSess.Messages {
-		if msg.Role == "user" {
+		if msg.Role != "user" {
+			continue
+		}
+		userCount++
+		if session.FirstMessage == "" {
 			session.FirstMessage = extractFirstLineFromContent(msg.Content)
-			break
 		}
 	}
+
+	session.UserMessageCount = userCount
 
 	return session, nil
 }

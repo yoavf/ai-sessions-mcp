@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -39,6 +40,7 @@ type claudeMessage struct {
 	Role        string                 `json:"role,omitempty"`
 	Content     interface{}            `json:"content,omitempty"`
 	Message     *claudeNestedMessage   `json:"message,omitempty"` // Nested message format
+	CWD         string                 `json:"cwd,omitempty"`
 	LeafUUID    string                 `json:"leafUuid,omitempty"`
 	IsSidechain bool                   `json:"isSidechain,omitempty"` // Skip sidechain messages
 	Metadata    map[string]interface{} `json:"-"`                     // Capture any extra fields
@@ -137,11 +139,7 @@ func (c *ClaudeAdapter) listAllSessions(claudeProjectsDir string, limit int) ([]
 			continue
 		}
 
-		// Reverse-engineer project path from directory name
-		// Directory names start with a dash, e.g., "-Users-yoavfarhi-dev-project"
-		projectPath := strings.ReplaceAll(dir.Name(), "-", "/")
-		// Remove leading slash if present
-		projectPath = strings.TrimPrefix(projectPath, "/")
+		projectPath := filepath.Join(claudeProjectsDir, dir.Name())
 
 		for _, filePath := range files {
 			session, err := c.parseSessionMetadata(filePath, projectPath)
@@ -168,11 +166,13 @@ func (c *ClaudeAdapter) listAllSessions(claudeProjectsDir string, limit int) ([]
 // parseSessionMetadata extracts metadata from a Claude Code session file.
 // It reads the first few lines to get the summary and first user message.
 func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Session, error) {
-	file, err := os.Open(filePath)
+	// Performance optimization: Quick pre-scan using fast byte search
+	// to detect if there are any user messages before doing expensive JSON parsing.
+	// This allows us to skip files with no user messages entirely.
+	fileData, err := os.ReadFile(filePath)
 	if err != nil {
-		return Session{}, fmt.Errorf("failed to open session file: %w", err)
+		return Session{}, fmt.Errorf("failed to read session file: %w", err)
 	}
-	defer file.Close()
 
 	var session Session
 	session.ID = strings.TrimSuffix(filepath.Base(filePath), ".jsonl")
@@ -185,8 +185,21 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 		session.Timestamp = stat.ModTime()
 	}
 
-	scanner := bufio.NewScanner(file)
+	// Fast check: does this file contain ANY user messages?
+	// We look for `"type":"user"` which appears in user message entries.
+	// This is much faster than JSON parsing and allows us to skip empty sessions early.
+	hasUserMessages := bytes.Contains(fileData, []byte(`"type":"user"`))
+	if !hasUserMessages {
+		session.FirstMessage = "(Empty session)"
+		session.UserMessageCount = 0
+		return session, nil
+	}
+
+	// File has user messages - do full JSON parse to get exact count and first message
+	scanner := bufio.NewScanner(bytes.NewReader(fileData))
 	foundFirstMessage := false
+	userMessageCount := 0
+	projectPathFromLog := ""
 
 	// Read through the file to find summary and first user message
 	for scanner.Scan() {
@@ -200,8 +213,12 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 			session.Summary = msg.Summary
 		}
 
+		if projectPathFromLog == "" && msg.CWD != "" {
+			projectPathFromLog = filepath.Clean(msg.CWD)
+		}
+
 		// Capture first user message (skip system messages and sidechain messages)
-		if msg.Type == "user" && !foundFirstMessage {
+		if msg.Type == "user" {
 			// Skip sidechain messages (like "Warmup")
 			if msg.IsSidechain {
 				continue
@@ -232,9 +249,12 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 				continue
 			}
 
-			session.FirstMessage = firstLine
-			foundFirstMessage = true
-			break // We have what we need
+			userMessageCount++
+
+			if !foundFirstMessage {
+				session.FirstMessage = firstLine
+				foundFirstMessage = true
+			}
 		}
 	}
 
@@ -246,6 +266,12 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 	if session.FirstMessage == "" {
 		session.FirstMessage = "(Empty session)"
 	}
+
+	if projectPathFromLog != "" {
+		session.ProjectPath = projectPathFromLog
+	}
+
+	session.UserMessageCount = userMessageCount
 
 	return session, nil
 }

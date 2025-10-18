@@ -33,3 +33,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+.pre-commit-gocache/
+
+# Misc
+.gocache

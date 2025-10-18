@@ -291,21 +291,27 @@ func stripSystemXMLTags(text string) string {
 		"local-command-stdout",
 	}
 
-	for _, tag := range systemTags {
-		openTag := "<" + tag + ">"
-		closeTag := "</" + tag + ">"
+	for {
+		trimmed := strings.TrimSpace(text)
+		removed := false
 
-		// Check if text starts with this tag
-		if strings.HasPrefix(text, openTag) {
-			// Find the closing tag
-			closeIdx := strings.Index(text, closeTag)
-			if closeIdx != -1 {
-				// Strip everything up to and including the closing tag
-				text = text[closeIdx+len(closeTag):]
-				text = strings.TrimSpace(text)
-				// Recursively check for more tags
-				return stripSystemXMLTags(text)
+		for _, tag := range systemTags {
+			openTag := "<" + tag + ">"
+			closeTag := "</" + tag + ">"
+
+			if strings.HasPrefix(trimmed, openTag) {
+				closeIdx := strings.Index(trimmed, closeTag)
+				if closeIdx != -1 {
+					trimmed = strings.TrimSpace(trimmed[closeIdx+len(closeTag):])
+					removed = true
+					break // Restart scanning with updated text
+				}
 			}
+		}
+
+		text = trimmed
+		if !removed {
+			break
 		}
 	}
 

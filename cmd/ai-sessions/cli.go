@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -27,6 +28,28 @@ const (
 type Config struct {
 	Token string `json:"token"`
 }
+
+type loginDeps struct {
+	stdin         io.Reader
+	stdout        io.Writer
+	stderr        io.Writer
+	openBrowser   func(string) error
+	validateToken func(string) error
+	saveConfig    func(Config) error
+}
+
+func defaultLoginDeps() loginDeps {
+	return loginDeps{
+		stdin:         os.Stdin,
+		stdout:        os.Stdout,
+		stderr:        os.Stderr,
+		openBrowser:   openBrowser,
+		validateToken: validateTokenFormat,
+		saveConfig:    saveConfig,
+	}
+}
+
+var exitFunc = os.Exit
 
 // validateAPIURL validates that a URL is from a trusted domain
 // For security, we only allow:
@@ -186,6 +209,13 @@ func validateTokenFormat(token string) error {
 
 // handleLogin prompts for and saves authentication token
 func handleLogin(apiURL string) {
+	deps := defaultLoginDeps()
+	if err := runLogin(apiURL, deps); err != nil {
+		exitFunc(1)
+	}
+}
+
+func runLogin(apiURL string, deps loginDeps) error {
 	// Determine API URL with priority: command-line flag > default
 	if apiURL == "" {
 		apiURL = getAPIURL("")
@@ -193,22 +223,22 @@ func handleLogin(apiURL string) {
 
 	// Validate the URL for security (prevent phishing via terminal hyperlinks)
 	if err := validateAPIURL(apiURL); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Invalid API URL: %v\n", err)
-		fmt.Fprintf(os.Stderr, "For local development, use: --url http://localhost:3000\n")
-		os.Exit(1)
+		fmt.Fprintf(deps.stderr, "Error: Invalid API URL: %v\n", err)
+		fmt.Fprintf(deps.stderr, "For local development, use: --url http://localhost:3000\n")
+		return err
 	}
 
 	tokenURL := apiURL + "/my-transcripts"
 
-	fmt.Println("AI Sessions CLI - Login")
-	fmt.Println()
+	fmt.Fprintln(deps.stdout, "AI Sessions CLI - Login")
+	fmt.Fprintln(deps.stdout)
 
 	// Create reader once and reuse it
-	reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(deps.stdin)
 
 	// Show clickable URL and wait for user input
 	clickableURL := makeClickableURL(tokenURL)
-	fmt.Printf("Press Enter to open %s in your browser, or paste your token: ", clickableURL)
+	fmt.Fprintf(deps.stdout, "Press Enter to open %s in your browser, or paste your token: ", clickableURL)
 
 	// Wait for user to press Enter or paste a token
 	line, _ := reader.ReadString('\n')
@@ -216,10 +246,10 @@ func handleLogin(apiURL string) {
 
 	if firstInput == "" {
 		// They just pressed Enter - open browser
-		fmt.Println("\033[36mOpening browser...\033[0m")
-		if err := openBrowser(tokenURL); err != nil {
-			fmt.Printf("\033[33m⚠\033[0m  Could not open browser: %v\n", err)
-			fmt.Printf("Please visit %s to generate your token.\n", clickableURL)
+		fmt.Fprintln(deps.stdout, "\033[36mOpening browser...\033[0m")
+		if err := deps.openBrowser(tokenURL); err != nil {
+			fmt.Fprintf(deps.stdout, "\033[33m⚠\033[0m  Could not open browser: %v\n", err)
+			fmt.Fprintf(deps.stdout, "Please visit %s to generate your token.\n", clickableURL)
 		}
 	}
 
@@ -228,26 +258,26 @@ func handleLogin(apiURL string) {
 	if firstInput != "" {
 		token = firstInput
 	} else {
-		fmt.Println()
-		fmt.Print("Enter your token: ")
+		fmt.Fprintln(deps.stdout)
+		fmt.Fprint(deps.stdout, "Enter your token: ")
 		tokenInput, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m Error reading token: %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(deps.stderr, "\033[31m✗\033[0m Error reading token: %v\n", err)
+			return err
 		}
 		token = strings.TrimSpace(tokenInput)
 	}
 
 	if token == "" {
-		fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m Token cannot be empty\n")
-		os.Exit(1)
+		fmt.Fprintf(deps.stderr, "\033[31m✗\033[0m Token cannot be empty\n")
+		return fmt.Errorf("token empty")
 	}
 
 	// Validate token format
-	if err := validateTokenFormat(token); err != nil {
-		fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m %v\n", err)
-		fmt.Fprintf(os.Stderr, "Please ensure you copied the entire token from %s\n", tokenURL)
-		os.Exit(1)
+	if err := deps.validateToken(token); err != nil {
+		fmt.Fprintf(deps.stderr, "\033[31m✗\033[0m %v\n", err)
+		fmt.Fprintf(deps.stderr, "Please ensure you copied the entire token from %s\n", tokenURL)
+		return err
 	}
 
 	// Save configuration
@@ -255,16 +285,18 @@ func handleLogin(apiURL string) {
 		Token: token,
 	}
 
-	if err := saveConfig(config); err != nil {
-		fmt.Fprintf(os.Stderr, "\033[31m✗\033[0m Error saving configuration: %v\n", err)
-		os.Exit(1)
+	if err := deps.saveConfig(config); err != nil {
+		fmt.Fprintf(deps.stderr, "\033[31m✗\033[0m Error saving configuration: %v\n", err)
+		return err
 	}
 
-	fmt.Println()
-	fmt.Println("\033[32m✓ Token saved successfully!\033[0m")
-	fmt.Println()
-	fmt.Println("You can now upload transcripts:")
-	fmt.Println("  \033[36maisessions upload session.jsonl\033[0m")
+	fmt.Fprintln(deps.stdout)
+	fmt.Fprintln(deps.stdout, "\033[32m✓ Token saved successfully!\033[0m")
+	fmt.Fprintln(deps.stdout)
+	fmt.Fprintln(deps.stdout, "You can now upload transcripts:")
+	fmt.Fprintln(deps.stdout, "  \033[36maisessions upload session.jsonl\033[0m")
+
+	return nil
 }
 
 // formatRelativeTime converts a timestamp to relative time (e.g., "2 hours ago", "yesterday")
@@ -299,30 +331,23 @@ func formatRelativeTime(t time.Time) string {
 // getProjectName extracts a meaningful project path segment from the full path
 // It removes the user's home directory prefix to create a shorter, more readable name.
 func getProjectName(projectPath string) string {
-	if projectPath == "" {
-		return "(unknown project)"
-	}
-
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		// Ensure homeDir has a trailing separator for correct trimming
 		homeDirWithSeparator := homeDir + string(filepath.Separator)
 		if strings.HasPrefix(projectPath, homeDirWithSeparator) {
 			relativePath := strings.TrimPrefix(projectPath, homeDirWithSeparator)
-			if relativePath == "" {
-				return "(home)"
-			}
-			return relativePath
+			return strings.ReplaceAll(relativePath, string(filepath.Separator), "-")
 		}
 
 		claudeRoot := filepath.Join(homeDir, ".claude", "projects") + string(filepath.Separator)
 		if strings.HasPrefix(projectPath, claudeRoot) {
-			return strings.TrimPrefix(projectPath, claudeRoot)
+			return strings.ReplaceAll(strings.TrimPrefix(projectPath, claudeRoot), string(filepath.Separator), "-")
 		}
 	}
 
-	// Fallback: return the path as-is
-	return projectPath
+	// Fallback: convert slashes to dashes and use the base name
+	return strings.ReplaceAll(filepath.Base(projectPath), string(filepath.Separator), "-")
 }
 
 // getAgentDisplayName returns a friendly name for the agent source.

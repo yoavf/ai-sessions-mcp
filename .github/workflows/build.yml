@@ -17,8 +17,27 @@ jobs:
       with:
         go-version: '1.25'
 
+    - name: Check formatting
+      run: |
+        set -euo pipefail
+        files=$(git ls-files '*.go')
+        if [ -n "$files" ]; then
+          needs_formatting=$(gofmt -l $files || true)
+          if [ -n "$needs_formatting" ]; then
+            echo "The following files need gofmt:"
+            echo "$needs_formatting"
+            exit 1
+          fi
+        fi
+
+    - name: Go vet
+      run: go vet ./...
+
     - name: Build
       run: go build -v -o bin/ai-sessions ./cmd/ai-sessions
 
     - name: Test
-      run: go test -v ./...
+      run: GOCACHE=$(pwd)/.gocache go test -cover ./...
+
+    - name: Cleanup
+      run: rm -rf .gocache

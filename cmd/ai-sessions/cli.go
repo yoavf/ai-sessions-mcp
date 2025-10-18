@@ -357,6 +357,8 @@ func getAgentDisplayName(source string) string {
 		return "Claude Code"
 	case "codex":
 		return "Codex"
+	case "gemini":
+		return "Gemini CLI"
 	default:
 		if source == "" {
 			return "Unknown"
@@ -457,6 +459,14 @@ func selectSessionInteractively() (string, error) {
 	if codexAdapter, codexErr := adapters.NewCodexAdapter(); codexErr == nil {
 		if codexSessions, listErr := codexAdapter.ListSessions("", 50); listErr == nil {
 			sessions = append(sessions, codexSessions...)
+		}
+	}
+
+	// Try to load Gemini sessions
+	if geminiAdapter, geminiErr := adapters.NewGeminiAdapter(); geminiErr == nil {
+		if geminiSessions, listErr := geminiAdapter.ListSessions("", 50); listErr == nil {
+			fmt.Printf("Found %d Gemini sessions\n", len(geminiSessions))
+			sessions = append(sessions, geminiSessions...)
 		}
 	}
 

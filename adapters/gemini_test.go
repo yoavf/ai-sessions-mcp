@@ -9,8 +9,6 @@ import (
 )
 
 func TestParseSessionMetadataCountsUserMessagesCaseInsensitive(t *testing.T) {
-	t.Helper()
-
 	tmpDir := t.TempDir()
 	projectPath := "/abs/project"
 	hash := hashProjectPath(projectPath)

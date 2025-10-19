@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -406,6 +405,8 @@ func normalizeGeminiRole(msg geminiMessage) string {
 		return "assistant"
 	case "system":
 		return "system"
+	case "tool":
+		return "tool"
 	default:
 		return role
 	}
@@ -440,8 +441,6 @@ func (g *GeminiAdapter) resolveProjectPath(hash, provided string, sess *geminiSe
 	return provided
 }
 
-var pathPattern = regexp.MustCompile(`(/[^\\s"'<>]+)`)
-
 func inferProjectPathFromSession(hash string, sess *geminiSession) string {
 	var candidates []string
 
@@ -465,7 +464,7 @@ func inferProjectPathFromSession(hash string, sess *geminiSession) string {
 
 	for _, candidate := range candidates {
 		clean := normalizeCandidatePath(candidate)
-		if clean == "" || !filepath.IsAbs(clean) {
+		if clean == "" || !isLikelyAbsolutePath(clean) {
 			continue
 		}
 
@@ -486,10 +485,21 @@ func inferProjectPathFromSession(hash string, sess *geminiSession) string {
 }
 
 func extractPathsFromText(text string) []string {
-	matches := pathPattern.FindAllString(text, -1)
-	results := make([]string, 0, len(matches))
-	for _, match := range matches {
-		results = append(results, match)
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		switch r {
+		case ' ', '\n', '\r', '\t', '"', '\'', '`', '<', '>', '(', ')', '[', ']', '{', '}', ',', ';':
+			return true
+		default:
+			return false
+		}
+	})
+
+	results := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field == "" {
+			continue
+		}
+		results = append(results, field)
 	}
 	return results
 }
@@ -499,8 +509,33 @@ func normalizeCandidatePath(path string) string {
 		return ""
 	}
 	path = strings.TrimSpace(path)
+	path = strings.Trim(path, `"'`)
+	path = strings.Trim(path, "`")
+	path = strings.Trim(path, "[](){}<>")
 	path = strings.TrimRight(path, ":,.")
 	return path
+}
+
+func isLikelyAbsolutePath(path string) bool {
+	if filepath.IsAbs(path) {
+		return true
+	}
+
+	// Windows drive letter (e.g., C:\ or C:/)
+	if len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/') && isASCIIAlpha(path[0]) {
+		return true
+	}
+
+	// UNC path (e.g., \\server\share)
+	if strings.HasPrefix(path, `\\`) && len(path) > 2 {
+		return true
+	}
+
+	return false
+}
+
+func isASCIIAlpha(b byte) bool {
+	return ('A' <= b && b <= 'Z') || ('a' <= b && b <= 'z')
 }
 
 // SearchSessions searches Gemini sessions for the given query.

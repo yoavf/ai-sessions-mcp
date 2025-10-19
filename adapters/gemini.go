@@ -16,7 +16,8 @@ import (
 // Gemini stores sessions as JSON files in ~/.gemini/tmp/[PROJECT_HASH]/chats/
 // where PROJECT_HASH is SHA256(absolute project path).
 type GeminiAdapter struct {
-	homeDir string
+	homeDir      string
+	projectCache map[string]string
 }
 
 // NewGeminiAdapter creates a new Gemini CLI session adapter.
@@ -25,7 +26,10 @@ func NewGeminiAdapter() (*GeminiAdapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	return &GeminiAdapter{homeDir: homeDir}, nil
+	return &GeminiAdapter{
+		homeDir:      homeDir,
+		projectCache: make(map[string]string),
+	}, nil
 }
 
 // Name returns the adapter name.
@@ -42,9 +46,16 @@ type geminiSession struct {
 
 // geminiMessage represents a single message in a Gemini session.
 type geminiMessage struct {
-	Role      string      `json:"role"`
-	Content   interface{} `json:"content"`
-	Timestamp string      `json:"timestamp,omitempty"`
+	Role      string           `json:"role,omitempty"`
+	Type      string           `json:"type,omitempty"`
+	Content   interface{}      `json:"content"`
+	Timestamp string           `json:"timestamp,omitempty"`
+	ToolCalls []geminiToolCall `json:"toolCalls,omitempty"`
+}
+
+type geminiToolCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args,omitempty"`
 }
 
 // hashProjectPath computes the SHA256 hash of the project path.
@@ -168,10 +179,13 @@ func (g *GeminiAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 		return Session{}, fmt.Errorf("failed to parse session JSON: %w", err)
 	}
 
+	hashDir := extractHashFromPath(filePath)
+	resolvedProjectPath := g.resolveProjectPath(hashDir, projectPath, &geminiSess)
+
 	session := Session{
 		ID:          geminiSess.SessionID,
 		Source:      "gemini",
-		ProjectPath: projectPath,
+		ProjectPath: resolvedProjectPath,
 		FilePath:    filePath,
 	}
 
@@ -196,7 +210,8 @@ func (g *GeminiAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 	// Extract first user message and count all user messages
 	userCount := 0
 	for _, msg := range geminiSess.Messages {
-		if msg.Role != "user" {
+		role := normalizeGeminiRole(msg)
+		if role != "user" {
 			continue
 		}
 		userCount++
@@ -326,8 +341,10 @@ func (g *GeminiAdapter) readAllMessages(filePath string) ([]Message, error) {
 
 	messages := make([]Message, 0, len(sess.Messages))
 	for _, msg := range sess.Messages {
+		role := normalizeGeminiRole(msg)
+
 		message := Message{
-			Role:     msg.Role,
+			Role:     role,
 			Content:  contentToStringGemini(msg.Content),
 			Metadata: make(map[string]interface{}),
 		}
@@ -370,6 +387,155 @@ func contentToStringGemini(content interface{}) string {
 		}
 	}
 	return fmt.Sprintf("%v", content)
+}
+
+func normalizeGeminiRole(msg geminiMessage) string {
+	role := strings.TrimSpace(msg.Role)
+	if role == "" {
+		role = strings.TrimSpace(msg.Type)
+	}
+	role = strings.ToLower(role)
+
+	switch role {
+	case "":
+		return ""
+	case "user":
+		return "user"
+	case "assistant", "model", "gemini":
+		return "assistant"
+	case "system":
+		return "system"
+	case "tool":
+		return "tool"
+	default:
+		return role
+	}
+}
+
+func extractHashFromPath(filePath string) string {
+	chatsDir := filepath.Dir(filePath)
+	hashDir := filepath.Base(filepath.Dir(chatsDir))
+	return hashDir
+}
+
+func (g *GeminiAdapter) resolveProjectPath(hash, provided string, sess *geminiSession) string {
+	if provided != "" && !strings.HasPrefix(provided, "unknown-project-") {
+		g.projectCache[hash] = provided
+		return provided
+	}
+
+	if path, ok := g.projectCache[hash]; ok && path != "" {
+		return path
+	}
+
+	if sess != nil {
+		if inferred := inferProjectPathFromSession(hash, sess); inferred != "" {
+			g.projectCache[hash] = inferred
+			return inferred
+		}
+	}
+
+	if provided != "" {
+		g.projectCache[hash] = provided
+	}
+	return provided
+}
+
+func inferProjectPathFromSession(hash string, sess *geminiSession) string {
+	var candidates []string
+
+	for _, msg := range sess.Messages {
+		// Collect content-derived paths
+		if content := contentToStringGemini(msg.Content); content != "" {
+			candidates = append(candidates, extractPathsFromText(content)...)
+		}
+
+		// Collect tool call argument paths
+		for _, call := range msg.ToolCalls {
+			for _, key := range []string{"path", "file_path", "filePath", "directory", "cwd", "root"} {
+				if val, ok := call.Args[key]; ok {
+					if str, ok := val.(string); ok {
+						candidates = append(candidates, str)
+					}
+				}
+			}
+		}
+	}
+
+	for _, candidate := range candidates {
+		clean := normalizeCandidatePath(candidate)
+		if clean == "" || !isLikelyAbsolutePath(clean) {
+			continue
+		}
+
+		current := clean
+		for {
+			if hashProjectPath(current) == hash {
+				return current
+			}
+			parent := filepath.Dir(current)
+			if parent == current || parent == "." {
+				break
+			}
+			current = parent
+		}
+	}
+
+	return ""
+}
+
+func extractPathsFromText(text string) []string {
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		switch r {
+		case ' ', '\n', '\r', '\t', '"', '\'', '`', '<', '>', '(', ')', '[', ']', '{', '}', ',', ';':
+			return true
+		default:
+			return false
+		}
+	})
+
+	results := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field == "" {
+			continue
+		}
+		results = append(results, field)
+	}
+	return results
+}
+
+func normalizeCandidatePath(path string) string {
+	if path == "" {
+		return ""
+	}
+	path = strings.TrimSpace(path)
+	path = strings.Trim(path, `"'`)
+	path = strings.Trim(path, "`")
+	path = strings.Trim(path, "[](){}<>")
+	path = strings.TrimRight(path, ":,.")
+	return path
+}
+
+func isLikelyAbsolutePath(path string) bool {
+	if filepath.IsAbs(path) {
+		return true
+	}
+
+	// Windows drive letter (e.g., C:\ or C:/)
+	if len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/') && isASCIIAlpha(path[0]) {
+		return true
+	}
+
+	// UNC path (e.g., \\server\share)
+	if strings.HasPrefix(path, `\\`) && len(path) > 2 {
+		return true
+	}
+
+	return false
+}
+
+func isASCIIAlpha(b byte) bool {
+	return ('A' <= b && b <= 'Z') || ('a' <= b && b <= 'z')
 }
 
 // SearchSessions searches Gemini sessions for the given query.

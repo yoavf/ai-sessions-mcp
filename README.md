@@ -38,12 +38,6 @@ This installs the binary to `~/.aisessions/bin`. Follow the instructions to add 
 INSTALL_DIR=/custom/path curl -fsSL aisessions.dev/install.sh | bash
 ```
 
-**Specific version:**
-
-```bash
-VERSION=1.2.0 curl -fsSL aisessions.dev/install.sh | bash
-```
-
 ### Manual Download
 
 Download pre-built binaries from [GitHub Releases](https://github.com/yoavf/ai-sessions-mcp/releases).

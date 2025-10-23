@@ -76,6 +76,13 @@ jobs:
         /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-darwin-amd64
         /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-darwin-arm64
 
+    - name: Generate checksums
+      run: |
+        cd bin
+        shasum -a 256 *.zip > checksums.txt
+        echo "Generated checksums:"
+        cat checksums.txt
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -84,4 +91,5 @@ jobs:
           bin/ai-sessions-darwin-arm64.zip
           bin/ai-sessions-linux-amd64.zip
           bin/ai-sessions-windows-amd64.zip
+          bin/checksums.txt
         generate_release_notes: true

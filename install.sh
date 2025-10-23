@@ -94,23 +94,17 @@ esac
 
 print_message info "Detected platform: ${ORANGE}$OS-$ARCH"
 
-# Fetch version (use VERSION env var or fetch latest)
-REQUESTED_VERSION=${VERSION:-}
-if [ -z "$REQUESTED_VERSION" ]; then
-    SPECIFIC_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+# Fetch latest version
+LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
 
-    if [[ $? -ne 0 || -z "$SPECIFIC_VERSION" ]]; then
-        print_message error "Failed to fetch version information"
-        exit 1
-    fi
-
-    DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$FILENAME"
-else
-    SPECIFIC_VERSION="v${REQUESTED_VERSION}"
-    DOWNLOAD_URL="https://github.com/$REPO/releases/download/v${REQUESTED_VERSION}/$FILENAME"
+if [[ $? -ne 0 || -z "$LATEST_VERSION" ]]; then
+    print_message error "Failed to fetch version information"
+    exit 1
 fi
 
-print_message info "Installing ${ORANGE}aisessions ${GREEN}version: ${YELLOW}$SPECIFIC_VERSION"
+DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$FILENAME"
+
+print_message info "Installing ${ORANGE}aisessions ${GREEN}version: ${YELLOW}$LATEST_VERSION"
 
 # Create temporary directory
 TMP_DIR=$(mktemp -d)
@@ -123,6 +117,35 @@ if ! curl -# -L -o "$ZIP_FILE" "$DOWNLOAD_URL"; then
   print_message error "Failed to download binary"
   exit 1
 fi
+
+# Download and verify checksums
+CHECKSUMS_URL="https://github.com/$REPO/releases/download/$LATEST_VERSION/checksums.txt"
+CHECKSUMS_FILE="$TMP_DIR/checksums.txt"
+print_message info "Downloading checksums..."
+if ! curl -fsSL "$CHECKSUMS_URL" -o "$CHECKSUMS_FILE"; then
+  print_message error "Failed to download checksums file"
+  print_message error "This may indicate a compromised or incomplete release"
+  exit 1
+fi
+
+print_message info "Verifying checksum..."
+EXPECTED_CHECKSUM=$(grep "$FILENAME" "$CHECKSUMS_FILE" | awk '{print $1}')
+if [ -z "$EXPECTED_CHECKSUM" ]; then
+  print_message error "Checksum not found for $FILENAME in checksums.txt"
+  exit 1
+fi
+
+ACTUAL_CHECKSUM=$(shasum -a 256 "$ZIP_FILE" | awk '{print $1}')
+
+if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+  print_message error "Checksum verification failed!"
+  print_message error "Expected: $EXPECTED_CHECKSUM"
+  print_message error "Got:      $ACTUAL_CHECKSUM"
+  print_message error "This may indicate a corrupted download or security issue"
+  exit 1
+fi
+
+print_message info "✓ Checksum verified"
 
 # Extract binary
 if ! unzip -q "$ZIP_FILE" -d "$TMP_DIR"; then
@@ -162,7 +185,7 @@ fi
 # Make executable
 chmod 755 "$INSTALL_PATH/$BINARY_NAME"
 
-print_message info "✓ Successfully installed ${ORANGE}aisessions ${YELLOW}$SPECIFIC_VERSION"
+print_message info "✓ Successfully installed ${ORANGE}aisessions ${YELLOW}$LATEST_VERSION"
 echo ""
 echo "Installation location: $INSTALL_PATH/$BINARY_NAME"
 echo ""
@@ -225,12 +248,6 @@ if [[ ":$PATH:" != *":$INSTALL_PATH:"* ]]; then
     echo "  source $CONFIG_FILE"
   fi
   echo ""
-fi
-
-# Add to GitHub Actions PATH if applicable
-if [ -n "${GITHUB_ACTIONS:-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
-    echo "$INSTALL_PATH" >> "$GITHUB_PATH"
-    print_message info "Added $INSTALL_PATH to \$GITHUB_PATH"
 fi
 
 echo "Get started:"

@@ -102,7 +102,8 @@ if [[ $? -ne 0 || -z "$LATEST_VERSION" ]]; then
     exit 1
 fi
 
-DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$FILENAME"
+# Use explicit version in download URL to ensure consistency with checksums
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_VERSION/$FILENAME"
 
 print_message info "Installing ${ORANGE}aisessions ${GREEN}version: ${YELLOW}$LATEST_VERSION"
 
@@ -203,14 +204,9 @@ if [[ ":$PATH:" != *":$INSTALL_PATH:"* ]]; then
       PATH_COMMAND="fish_add_path $INSTALL_PATH"
       ;;
     zsh)
-      # Check for existing zsh config files
-      for file in "$HOME/.zshrc" "$HOME/.zshenv" "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc"; do
-        if [[ -f "$file" ]]; then
-          CONFIG_FILE="$file"
-          break
-        fi
-      done
-      CONFIG_FILE="${CONFIG_FILE:-$HOME/.zshrc}"
+      # Use .zshrc for interactive shell PATH modifications
+      # .zshrc is the standard file for interactive zsh configuration
+      CONFIG_FILE="$HOME/.zshrc"
       PATH_COMMAND="export PATH=\"$INSTALL_PATH:\$PATH\""
       ;;
     bash)
@@ -250,8 +246,15 @@ if [[ ":$PATH:" != *":$INSTALL_PATH:"* ]]; then
   echo ""
 fi
 
-echo "Get started:"
-echo "  aisessions login"
-echo "  aisessions upload"
 echo ""
-echo "For help: aisessions --help"
+print_message info "Installation complete!"
+echo ""
+echo "Two ways to use aisessions:"
+echo ""
+echo "1. ${GREEN}Upload transcripts to aisessions.dev:${NC}"
+echo "   ${YELLOW}aisessions login${NC}"
+echo "   ${YELLOW}aisessions upload${NC}"
+echo ""
+echo "2. ${GREEN}Use as MCP server (access transcripts across AI coding tools):${NC}"
+echo "   See: ${ORANGE}https://github.com/yoavf/ai-sessions-mcp#setup${NC}"
+echo ""

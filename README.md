@@ -22,50 +22,71 @@ Allow AI agents to search, list, and read your previous local coding sessions fr
 
 ## Installation
 
-### Download Pre-built Binary
+### Quick Install
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/yoavf/ai-sessions-mcp/releases).
-Unzip and move the binary somewhere in your path and point your MCP config at that location.
+**macOS, Linux, and Windows (Git Bash/WSL):**
+
+```bash
+curl -fsSL https://aisessions.dev/install.sh | bash
+```
+
+This installs the binary to `~/.aisessions/bin`. Follow the instructions to add it to your PATH.
+
+**Custom installation directory:**
+
+```bash
+INSTALL_DIR=/custom/path curl -fsSL https://aisessions.dev/install.sh | bash
+```
+
+### Manual Download
+
+Download pre-built binaries from [GitHub Releases](https://github.com/yoavf/ai-sessions-mcp/releases).
 
 ### Build from Source
 
 **Prerequisites**: Go 1.25 or later
 
 ```bash
-cd ai-sessions-mcp
-go build -o bin/ai-sessions ./cmd/ai-sessions
+go build -o bin/aisessions ./cmd/ai-sessions
 ```
 
-Move the resulting binary anywhere you like and use that path in your MCP config.
-
 ### Setup
+
+After installation, configure your MCP client to use the binary:
 
 #### Claude Code
 
 ```bash
-claude mcp add ai-sessions /path/to/ai-sessions
+claude mcp add ai-sessions ~/.aisessions/bin/aisessions
+```
+
+Or if using a custom install location:
+```bash
+claude mcp add ai-sessions /path/to/aisessions
 ```
 
 #### Codex CLI
 
-Edit `~/.codex/config.toml` and add:
-```
-[mcp_servers.ai_session]
-command = "/path/to/ai-sessions"
+Edit `~/.codex/config.toml`:
+```toml
+[mcp_servers.ai_sessions]
+command = "~/.aisessions/bin/aisessions"
 ```
 
 #### Claude Desktop
 
-Add to your Claude Desktop config file (open via `Settings` -> `Developer` -> `Edit Config`)
+Add to your config file (`Settings` → `Developer` → `Edit Config`):
 ```json
 {
   "mcpServers": {
     "ai-sessions": {
-      "command": "/path/to/ai-sessions"
+      "command": "/Users/YOUR_USERNAME/.aisessions/bin/aisessions"
     }
   }
 }
 ```
+
+Replace `YOUR_USERNAME` with your actual username, or use your custom install path.
 
 **Restart Claude Desktop** to activate.
 

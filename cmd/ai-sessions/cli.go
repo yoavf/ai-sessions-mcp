@@ -361,6 +361,8 @@ func getAgentDisplayName(source string) string {
 		return "Gemini CLI"
 	case "mistral":
 		return "Mistral Vibe"
+	case "copilot":
+		return "Copilot CLI"
 	default:
 		if source == "" {
 			return "Unknown"
@@ -475,6 +477,13 @@ func selectSessionInteractively() (string, error) {
 	if mistralAdapter, mistralErr := adapters.NewMistralAdapter(); mistralErr == nil {
 		if mistralSessions, listErr := mistralAdapter.ListSessions("", 50); listErr == nil {
 			sessions = append(sessions, mistralSessions...)
+		}
+	}
+
+	// Try to load Copilot CLI sessions
+	if copilotAdapter, copilotErr := adapters.NewCopilotAdapter(); copilotErr == nil {
+		if copilotSessions, listErr := copilotAdapter.ListSessions("", 50); listErr == nil {
+			sessions = append(sessions, copilotSessions...)
 		}
 	}
 

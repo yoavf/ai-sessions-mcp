@@ -231,7 +231,7 @@ func (c *ClaudeAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 			}
 
 			// Extract the text and check if it's a system message to skip
-			firstLine := extractFirstLine(content)
+			firstLine := extractFirstLineFromClaudeContent(content)
 			trimmed := strings.TrimSpace(firstLine)
 
 			// Skip empty messages
@@ -318,9 +318,9 @@ func stripSystemXMLTags(text string) string {
 	return text
 }
 
-// extractFirstLine extracts the first non-empty line from content.
-// Content can be a string or a structured object.
-func extractFirstLine(content interface{}) string {
+// extractFirstLineFromClaudeContent extracts the first non-empty line from Claude content.
+// It handles various content types (string, structured blocks, etc.) and strips system XML tags.
+func extractFirstLineFromClaudeContent(content interface{}) string {
 	switch v := content.(type) {
 	case string:
 		lines := strings.Split(v, "\n")
@@ -348,13 +348,13 @@ func extractFirstLine(content interface{}) string {
 		for _, item := range v {
 			if m, ok := item.(map[string]interface{}); ok {
 				if text, ok := m["text"].(string); ok {
-					return extractFirstLine(text)
+					return extractFirstLineFromClaudeContent(text)
 				}
 			}
 		}
 	case map[string]interface{}:
 		if text, ok := v["text"].(string); ok {
-			return extractFirstLine(text)
+			return extractFirstLineFromClaudeContent(text)
 		}
 	}
 	return ""

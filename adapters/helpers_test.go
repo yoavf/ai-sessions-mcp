@@ -28,20 +28,20 @@ func TestExtractFirstLineString(t *testing.T) {
 	}
 }
 
-func TestExtractFirstLineStructured(t *testing.T) {
+func TestExtractFirstLineFromClaudeContentStructured(t *testing.T) {
 	content := []interface{}{
 		map[string]interface{}{"text": "First meaningful line\nSecond line"},
 	}
-	got := extractFirstLine(content)
+	got := extractFirstLineFromClaudeContent(content)
 	if got != "First meaningful line" {
-		t.Fatalf("extractFirstLine failed for structured content, got %q", got)
+		t.Fatalf("extractFirstLineFromClaudeContent failed for structured content, got %q", got)
 	}
 }
 
-func TestExtractFirstLineSkipsSystemPrefixes(t *testing.T) {
+func TestExtractFirstLineFromClaudeContentSkipsSystemPrefixes(t *testing.T) {
 	content := "<local-command-stdout>ignored</local-command-stdout>\nReal question?"
-	if got := extractFirstLine(content); got != "Real question?" {
-		t.Fatalf("extractFirstLine failed to skip system block, got %q", got)
+	if got := extractFirstLineFromClaudeContent(content); got != "Real question?" {
+		t.Fatalf("extractFirstLineFromClaudeContent failed to skip system block, got %q", got)
 	}
 }
 

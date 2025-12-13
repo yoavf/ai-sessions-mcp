@@ -2,7 +2,10 @@
 // from different CLI coding agents (Claude Code, Gemini CLI, OpenAI Codex, opencode).
 package adapters
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Session represents a unified view of an AI assistant session, regardless of the source agent.
 // Each session contains metadata about when it occurred, what was discussed, and how to retrieve its full content.
@@ -46,6 +49,22 @@ type Message struct {
 
 	// Metadata contains agent-specific additional data (e.g., tool calls, thinking blocks)
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// extractFirstLine extracts the first non-empty line from text, truncating if needed.
+// This is a shared helper used by multiple adapters for extracting message previews.
+func extractFirstLine(text string) string {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			if len(trimmed) > 200 {
+				return trimmed[:200] + "..."
+			}
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // SessionAdapter is the interface that each agent-specific adapter must implement.

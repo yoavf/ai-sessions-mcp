@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: gofmt
         name: gofmt
-        entry: bash -lc 'if [ "$#" -gt 0 ]; then files=$(gofmt -l "$@" || true); if [ -n "$files" ]; then echo "Files need formatting:"; echo "$files"; gofmt -w "$@"; fi; fi'
+        entry: bash -lc 'if [ "$#" -gt 0 ]; then files=$(gofmt -l "$@" || true); if [ -n "$files" ]; then echo "Files need formatting:"; echo "$files"; gofmt -w "$@" && git add "$@"; fi; fi'
         language: system
         types: [go]
       - id: go-vet

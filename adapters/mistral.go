@@ -311,42 +311,121 @@ func normalizeMistralRole(role string) string {
 }
 
 // SearchSessions searches Mistral Vibe sessions for the given query.
+// It reads each file only once to avoid redundant I/O.
 func (m *MistralAdapter) SearchSessions(projectPath, query string, limit int) ([]Session, error) {
-	// First, list all sessions
-	sessions, err := m.ListSessions(projectPath, 0)
+	sessionsDir := filepath.Join(m.homeDir, ".vibe", "logs", "session")
+
+	if _, err := os.Stat(sessionsDir); os.IsNotExist(err) {
+		return []Session{}, nil
+	}
+
+	if projectPath != "" {
+		var err error
+		projectPath, err = filepath.Abs(projectPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path: %w", err)
+		}
+	}
+
+	files, err := filepath.Glob(filepath.Join(sessionsDir, "session_*.json"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list session files: %w", err)
 	}
 
 	query = strings.ToLower(query)
 	var matches []Session
 
-	// Search through each session
-	for _, session := range sessions {
-		// Check if query is in first message
-		if strings.Contains(strings.ToLower(session.FirstMessage), query) {
-			matches = append(matches, session)
-			continue
-		}
-
-		// Search through full session content
-		messages, err := m.readAllMessages(session.FilePath)
+	// Read each file once and search in a single pass
+	for _, filePath := range files {
+		session, mistralSess, err := m.parseSessionFull(filePath)
 		if err != nil {
 			continue
 		}
 
-		for _, msg := range messages {
+		// Filter by project path if specified
+		if projectPath != "" && session.ProjectPath != projectPath {
+			continue
+		}
+
+		// Search in all message content
+		found := false
+		for _, msg := range mistralSess.Messages {
 			if strings.Contains(strings.ToLower(msg.Content), query) {
-				matches = append(matches, session)
+				found = true
 				break
 			}
 		}
 
-		// Apply limit if we've found enough
-		if limit > 0 && len(matches) >= limit {
-			break
+		if found {
+			matches = append(matches, session)
+			if limit > 0 && len(matches) >= limit {
+				break
+			}
 		}
 	}
 
+	// Sort by timestamp (newest first)
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Timestamp.After(matches[j].Timestamp)
+	})
+
 	return matches, nil
+}
+
+// parseSessionFull reads a session file and returns both metadata and raw session data.
+// This avoids reading the file twice when both are needed.
+func (m *MistralAdapter) parseSessionFull(filePath string) (Session, *mistralSession, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return Session{}, nil, fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	var mistralSess mistralSession
+	if err := json.Unmarshal(data, &mistralSess); err != nil {
+		return Session{}, nil, fmt.Errorf("failed to parse session JSON: %w", err)
+	}
+
+	session := Session{
+		ID:          mistralSess.Metadata.SessionID,
+		Source:      "mistral",
+		ProjectPath: mistralSess.Metadata.Environment.WorkingDirectory,
+		FilePath:    filePath,
+	}
+
+	// Parse timestamp
+	if mistralSess.Metadata.StartTime != "" {
+		formats := []string{
+			"2006-01-02T15:04:05.999999",
+			"2006-01-02T15:04:05.999999Z07:00",
+			time.RFC3339,
+			time.RFC3339Nano,
+		}
+		for _, format := range formats {
+			if ts, err := time.Parse(format, mistralSess.Metadata.StartTime); err == nil {
+				session.Timestamp = ts
+				break
+			}
+		}
+	}
+
+	if session.Timestamp.IsZero() {
+		if stat, err := os.Stat(filePath); err == nil {
+			session.Timestamp = stat.ModTime()
+		}
+	}
+
+	// Extract first user message and count
+	userCount := 0
+	for _, msg := range mistralSess.Messages {
+		if msg.Role != "user" {
+			continue
+		}
+		userCount++
+		if session.FirstMessage == "" {
+			session.FirstMessage = extractFirstLine(msg.Content)
+		}
+	}
+	session.UserMessageCount = userCount
+
+	return session, &mistralSess, nil
 }

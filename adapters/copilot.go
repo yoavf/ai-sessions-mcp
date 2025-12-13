@@ -419,42 +419,163 @@ func (c *CopilotAdapter) readAllMessages(filePath string) ([]Message, error) {
 }
 
 // SearchSessions searches Copilot CLI sessions for the given query.
+// It reads each file only once to avoid redundant I/O.
 func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([]Session, error) {
-	// First, list all sessions
-	sessions, err := c.ListSessions(projectPath, 0)
+	sessionsDir := filepath.Join(c.homeDir, ".copilot", "session-state")
+
+	if _, err := os.Stat(sessionsDir); os.IsNotExist(err) {
+		return []Session{}, nil
+	}
+
+	if projectPath != "" {
+		var err error
+		projectPath, err = filepath.Abs(projectPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path: %w", err)
+		}
+	}
+
+	files, err := filepath.Glob(filepath.Join(sessionsDir, "*.jsonl"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list session files: %w", err)
 	}
 
 	query = strings.ToLower(query)
 	var matches []Session
 
-	// Search through each session
-	for _, session := range sessions {
-		// Check if query is in first message
-		if strings.Contains(strings.ToLower(session.FirstMessage), query) {
-			matches = append(matches, session)
-			continue
-		}
-
-		// Search through full session content
-		messages, err := c.readAllMessages(session.FilePath)
+	// Read each file once and search in a single pass
+	for _, filePath := range files {
+		session, contents, err := c.parseSessionWithContents(filePath)
 		if err != nil {
 			continue
 		}
 
-		for _, msg := range messages {
-			if strings.Contains(strings.ToLower(msg.Content), query) {
-				matches = append(matches, session)
+		// Filter by project path if specified
+		if projectPath != "" && session.ProjectPath != projectPath {
+			continue
+		}
+
+		// Search in all message content
+		found := false
+		for _, content := range contents {
+			if strings.Contains(strings.ToLower(content), query) {
+				found = true
 				break
 			}
 		}
 
-		// Apply limit if we've found enough
-		if limit > 0 && len(matches) >= limit {
-			break
+		if found {
+			matches = append(matches, session)
+			if limit > 0 && len(matches) >= limit {
+				break
+			}
 		}
 	}
 
+	// Sort by timestamp (newest first)
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Timestamp.After(matches[j].Timestamp)
+	})
+
 	return matches, nil
+}
+
+// parseSessionWithContents reads a session file and returns metadata plus all message contents.
+// This avoids reading the file twice when both are needed for searching.
+func (c *CopilotAdapter) parseSessionWithContents(filePath string) (Session, []string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return Session{}, nil, fmt.Errorf("failed to open session file: %w", err)
+	}
+	defer file.Close()
+
+	session := Session{
+		Source:   "copilot",
+		FilePath: filePath,
+	}
+
+	folderTrustRegex := regexp.MustCompile(`Folder (.+) has been added to trusted folders`)
+	var seenFilePaths []string
+	var contents []string
+	userCount := 0
+
+	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		var event copilotEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+
+		switch event.Type {
+		case "session.start":
+			var data copilotSessionStart
+			if err := json.Unmarshal(event.Data, &data); err == nil {
+				session.ID = data.SessionID
+				if ts, err := time.Parse(time.RFC3339Nano, data.StartTime); err == nil {
+					session.Timestamp = ts
+				} else if ts, err := time.Parse(time.RFC3339, data.StartTime); err == nil {
+					session.Timestamp = ts
+				}
+			}
+
+		case "session.info":
+			var data copilotSessionInfo
+			if err := json.Unmarshal(event.Data, &data); err == nil {
+				if data.InfoType == "folder_trust" {
+					if matches := folderTrustRegex.FindStringSubmatch(data.Message); len(matches) > 1 {
+						session.ProjectPath = matches[1]
+					}
+				}
+			}
+
+		case "user.message":
+			var data copilotUserMessage
+			if err := json.Unmarshal(event.Data, &data); err == nil {
+				userCount++
+				contents = append(contents, data.Content)
+				if session.FirstMessage == "" {
+					session.FirstMessage = extractFirstLine(data.Content)
+				}
+			}
+
+		case "assistant.message":
+			var data copilotAssistantMessage
+			if err := json.Unmarshal(event.Data, &data); err == nil {
+				contents = append(contents, data.Content)
+			}
+
+		case "tool.execution_start":
+			var data copilotToolExecution
+			if err := json.Unmarshal(event.Data, &data); err == nil {
+				var args map[string]interface{}
+				if err := json.Unmarshal(data.Arguments, &args); err == nil {
+					if path, ok := args["path"].(string); ok && strings.HasPrefix(path, "/") {
+						seenFilePaths = append(seenFilePaths, path)
+					}
+				}
+			}
+		}
+	}
+
+	session.UserMessageCount = userCount
+
+	if session.ProjectPath == "" && len(seenFilePaths) > 0 {
+		session.ProjectPath = findCommonDirectory(seenFilePaths)
+	}
+
+	if session.Timestamp.IsZero() {
+		if stat, err := os.Stat(filePath); err == nil {
+			session.Timestamp = stat.ModTime()
+		}
+	}
+
+	if session.ID == "" {
+		base := filepath.Base(filePath)
+		session.ID = strings.TrimSuffix(base, ".jsonl")
+	}
+
+	return session, contents, nil
 }

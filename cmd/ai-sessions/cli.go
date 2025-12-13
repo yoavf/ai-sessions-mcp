@@ -453,42 +453,57 @@ func selectSessionInteractively() (string, error) {
 		return "", fmt.Errorf("failed to initialize Claude adapter: %w", err)
 	}
 
-	// List recent sessions (limit to 50 per adapter)
-	sessions, err := claudeAdapter.ListSessions("", 50)
+	// List recent sessions (fetch more to account for empty sessions being filtered out)
+	sessions, err := claudeAdapter.ListSessions("", 200)
 	if err != nil {
 		return "", fmt.Errorf("failed to list sessions: %w", err)
 	}
 
 	// Try to load Codex sessions (ignore errors to keep Claude flow working)
 	if codexAdapter, codexErr := adapters.NewCodexAdapter(); codexErr == nil {
-		if codexSessions, listErr := codexAdapter.ListSessions("", 50); listErr == nil {
+		if codexSessions, listErr := codexAdapter.ListSessions("", 200); listErr == nil {
 			sessions = append(sessions, codexSessions...)
 		}
 	}
 
 	// Try to load Gemini sessions
 	if geminiAdapter, geminiErr := adapters.NewGeminiAdapter(); geminiErr == nil {
-		if geminiSessions, listErr := geminiAdapter.ListSessions("", 50); listErr == nil {
+		if geminiSessions, listErr := geminiAdapter.ListSessions("", 200); listErr == nil {
 			sessions = append(sessions, geminiSessions...)
 		}
 	}
 
 	// Try to load Mistral Vibe sessions
 	if mistralAdapter, mistralErr := adapters.NewMistralAdapter(); mistralErr == nil {
-		if mistralSessions, listErr := mistralAdapter.ListSessions("", 50); listErr == nil {
+		if mistralSessions, listErr := mistralAdapter.ListSessions("", 200); listErr == nil {
 			sessions = append(sessions, mistralSessions...)
 		}
 	}
 
 	// Try to load Copilot CLI sessions
 	if copilotAdapter, copilotErr := adapters.NewCopilotAdapter(); copilotErr == nil {
-		if copilotSessions, listErr := copilotAdapter.ListSessions("", 50); listErr == nil {
+		if copilotSessions, listErr := copilotAdapter.ListSessions("", 200); listErr == nil {
 			sessions = append(sessions, copilotSessions...)
 		}
 	}
 
 	if len(sessions) == 0 {
 		return "", fmt.Errorf("no sessions found")
+	}
+
+	// Filter out sessions with no user messages BEFORE sorting and limiting
+	// Many sessions are empty (warmups, failed starts, etc.)
+	n := 0
+	for _, session := range sessions {
+		if session.UserMessageCount > 0 {
+			sessions[n] = session
+			n++
+		}
+	}
+	sessions = sessions[:n]
+
+	if len(sessions) == 0 {
+		return "", fmt.Errorf("no sessions with user messages found")
 	}
 
 	// Sort sessions by timestamp (newest first), putting zero timestamps last
@@ -508,28 +523,13 @@ func selectSessionInteractively() (string, error) {
 		return ti.After(tj)
 	})
 
-	// Limit to 50 sessions overall to keep the list manageable
+	// Limit to 50 sessions for display
 	if len(sessions) > 50 {
 		sessions = sessions[:50]
 	}
 
 	// Get terminal width for formatting
 	termWidth := getTerminalWidth()
-
-	// Filter sessions in-place to remove those with no user messages
-	// This is more memory-efficient than creating a new slice
-	n := 0
-	for _, session := range sessions {
-		if session.UserMessageCount > 0 {
-			sessions[n] = session
-			n++
-		}
-	}
-	sessions = sessions[:n]
-
-	if len(sessions) == 0 {
-		return "", fmt.Errorf("no sessions with user messages found")
-	}
 
 	// Create display items from the filtered sessions
 	items := make([]string, len(sessions))

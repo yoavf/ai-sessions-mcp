@@ -368,7 +368,10 @@ func (c *CopilotAdapter) readAllMessages(filePath string) ([]Message, error) {
 					toolCalls := make([]map[string]interface{}, len(data.ToolRequests))
 					for i, tr := range data.ToolRequests {
 						var args interface{}
-						json.Unmarshal(tr.Arguments, &args)
+						if err := json.Unmarshal(tr.Arguments, &args); err != nil {
+							// Fallback to raw string if unmarshaling fails
+							args = string(tr.Arguments)
+						}
 						toolCalls[i] = map[string]interface{}{
 							"id":        tr.ToolCallID,
 							"name":      tr.Name,

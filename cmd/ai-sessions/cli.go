@@ -359,6 +359,8 @@ func getAgentDisplayName(source string) string {
 		return "Codex"
 	case "gemini":
 		return "Gemini CLI"
+	case "mistral":
+		return "Mistral Vibe"
 	default:
 		if source == "" {
 			return "Unknown"
@@ -465,8 +467,14 @@ func selectSessionInteractively() (string, error) {
 	// Try to load Gemini sessions
 	if geminiAdapter, geminiErr := adapters.NewGeminiAdapter(); geminiErr == nil {
 		if geminiSessions, listErr := geminiAdapter.ListSessions("", 50); listErr == nil {
-			fmt.Printf("Found %d Gemini sessions\n", len(geminiSessions))
 			sessions = append(sessions, geminiSessions...)
+		}
+	}
+
+	// Try to load Mistral Vibe sessions
+	if mistralAdapter, mistralErr := adapters.NewMistralAdapter(); mistralErr == nil {
+		if mistralSessions, listErr := mistralAdapter.ListSessions("", 50); listErr == nil {
+			sessions = append(sessions, mistralSessions...)
 		}
 	}
 

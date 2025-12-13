@@ -2,7 +2,7 @@
 // access to AI assistant CLI sessions from various tools.
 //
 // This server allows AI assistants to search, list, and read previous coding sessions
-// from Claude Code, Gemini CLI, OpenAI Codex, and opencode.
+// from Claude Code, Gemini CLI, OpenAI Codex, opencode, and Mistral Vibe.
 package main
 
 import (
@@ -30,7 +30,7 @@ func main() {
 	// Otherwise, run as MCP server
 	// Create the MCP server with metadata
 	opts := &mcp.ServerOptions{
-		Instructions: "This server provides access to AI assistant CLI sessions from Claude Code, Gemini CLI, OpenAI Codex, and opencode. Use the tools to search, list, and read previous coding sessions.",
+		Instructions: "This server provides access to AI assistant CLI sessions from Claude Code, Gemini CLI, OpenAI Codex, opencode, and Mistral Vibe. Use the tools to search, list, and read previous coding sessions.",
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
@@ -51,6 +51,9 @@ func main() {
 	}
 	if opencodeAdapter, err := adapters.NewOpencodeAdapter(); err == nil {
 		adaptersMap["opencode"] = opencodeAdapter
+	}
+	if mistralAdapter, err := adapters.NewMistralAdapter(); err == nil {
+		adaptersMap["mistral"] = mistralAdapter
 	}
 
 	// Initialize search cache
@@ -113,7 +116,7 @@ func addListAvailableSourcesTool(server *mcp.Server, adaptersMap map[string]adap
 
 // Tool 2: list_sessions
 type listSessionsArgs struct {
-	Source      string `json:"source,omitempty" jsonschema:"Filter by source name (claude, gemini, codex, opencode). Leave empty for all sources."`
+	Source      string `json:"source,omitempty" jsonschema:"Filter by source name (claude, gemini, codex, opencode, mistral). Leave empty for all sources."`
 	ProjectPath string `json:"project_path,omitempty" jsonschema:"Filter by project directory path. Leave empty for current directory."`
 	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of sessions to return"`
 }
@@ -183,7 +186,7 @@ func addListSessionsTool(server *mcp.Server, adaptersMap map[string]adapters.Ses
 // Tool 3: search_sessions
 type searchSessionsArgs struct {
 	Query       string `json:"query" jsonschema:"Search query to find in session content"`
-	Source      string `json:"source,omitempty" jsonschema:"Filter by source name (claude, gemini, codex, opencode). Leave empty for all sources."`
+	Source      string `json:"source,omitempty" jsonschema:"Filter by source name (claude, gemini, codex, opencode, mistral). Leave empty for all sources."`
 	ProjectPath string `json:"project_path,omitempty" jsonschema:"Filter by project directory path. Leave empty for current directory."`
 	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of matching sessions to return"`
 }
@@ -310,7 +313,7 @@ func indexSessions(adaptersMap map[string]adapters.SessionAdapter, cache *search
 // Tool 4: get_session
 type getSessionArgs struct {
 	SessionID string `json:"session_id" jsonschema:"The session ID to retrieve"`
-	Source    string `json:"source" jsonschema:"The source that created this session (claude, gemini, codex, opencode)"`
+	Source    string `json:"source" jsonschema:"The source that created this session (claude, gemini, codex, opencode, mistral)"`
 	Page      int    `json:"page,omitempty" jsonschema:"Page number for pagination (0-indexed)"`
 	PageSize  int    `json:"page_size,omitempty" jsonschema:"Number of messages per page"`
 }

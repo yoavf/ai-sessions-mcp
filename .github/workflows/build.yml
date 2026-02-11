@@ -37,7 +37,10 @@ jobs:
       run: go build -v -o bin/ai-sessions ./cmd/ai-sessions
 
     - name: Test
-      run: GOCACHE=$(pwd)/.gocache go test -cover ./...
+      run: go test -cover ./...
 
-    - name: Cleanup
-      run: rm -rf .gocache
+    - name: Test (CGO_ENABLED=0)
+      run: |
+        # Verify the pure-Go sqlite driver works without CGO,
+        # matching how release binaries are cross-compiled.
+        CGO_ENABLED=0 go test ./...

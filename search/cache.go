@@ -34,6 +34,17 @@ func NewCache(dbPath string) (*Cache, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// Enable WAL mode for better concurrent read performance
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+	// Avoid immediate SQLITE_BUSY errors under contention
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
+	}
+
 	// Initialize schema
 	if _, err := db.Exec(schemaSQL); err != nil {
 		db.Close()

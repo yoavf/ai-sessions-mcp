@@ -42,10 +42,10 @@ jobs:
       run: |
         set -eo pipefail
         mkdir -p bin
-        GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-amd64 ./cmd/ai-sessions
-        GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-arm64 ./cmd/ai-sessions
-        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-linux-amd64 ./cmd/ai-sessions
-        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-windows-amd64.exe ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-amd64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-arm64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-linux-amd64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-windows-amd64.exe ./cmd/ai-sessions
 
     - name: Sign and notarize macOS binaries
       env:

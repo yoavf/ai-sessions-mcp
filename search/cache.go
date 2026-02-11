@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"github.com/yoavf/ai-sessions-mcp/adapters"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed schema.sql

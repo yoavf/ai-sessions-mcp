@@ -108,7 +108,7 @@ func handleCLI() {
 	case "upload":
 		handleUploadCommand()
 	case "version", "-v", "--version":
-		fmt.Println("aisessions version 2.0.0")
+		fmt.Printf("aisessions version %s\n", version)
 	case "help", "-h", "--help":
 		printUsage()
 	default:

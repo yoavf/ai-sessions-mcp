@@ -2,7 +2,7 @@
 // access to AI assistant CLI sessions from various tools.
 //
 // This server allows AI assistants to search, list, and read previous coding sessions
-// from Claude Code, Gemini CLI, OpenAI Codex, opencode, and Mistral Vibe.
+// from Claude Code, Gemini CLI, OpenAI Codex, opencode, Mistral Vibe, and GitHub Copilot CLI.
 package main
 
 import (
@@ -20,6 +20,8 @@ import (
 	"github.com/yoavf/ai-sessions-mcp/search"
 )
 
+var version = "dev"
+
 func main() {
 	// Check if running in CLI mode (has command arguments)
 	if len(os.Args) > 1 {
@@ -35,7 +37,7 @@ func main() {
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "ai-sessions",
-		Version: "1.0.0",
+		Version: version,
 	}, opts)
 
 	// Initialize adapters
@@ -89,7 +91,8 @@ type listAvailableSourcesArgs struct{}
 func addListAvailableSourcesTool(server *mcp.Server, adaptersMap map[string]adapters.SessionAdapter) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_available_sources",
-		Description: "List which AI CLI sources have sessions available (e.g., claude, gemini, codex, opencode)",
+		Description: "List which AI CLI sources have sessions available (claude, gemini, codex, opencode, mistral, copilot)",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listAvailableSourcesArgs) (*mcp.CallToolResult, any, error) {
 		available := make([]map[string]interface{}, 0, len(adaptersMap))
 		for name, adapter := range adaptersMap {
@@ -128,6 +131,7 @@ func addListSessionsTool(server *mcp.Server, adaptersMap map[string]adapters.Ses
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_sessions",
 		Description: "List recent AI assistant sessions with optional filtering by source and project",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.Limit == 0 {
 			args.Limit = 10
@@ -198,6 +202,7 @@ func addSearchSessionsTool(server *mcp.Server, adaptersMap map[string]adapters.S
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_sessions",
 		Description: "Search through session content using BM25 ranking for relevance",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchSessionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.Query == "" {
 			return nil, nil, fmt.Errorf("query is required")
@@ -325,6 +330,7 @@ func addGetSessionTool(server *mcp.Server, adaptersMap map[string]adapters.Sessi
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_session",
 		Description: "Get the full content of a session with pagination support",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getSessionArgs) (*mcp.CallToolResult, any, error) {
 		if args.SessionID == "" {
 			return nil, nil, fmt.Errorf("session_id is required")

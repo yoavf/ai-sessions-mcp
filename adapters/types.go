@@ -1,5 +1,5 @@
 // Package adapters provides interfaces and types for accessing AI assistant sessions
-// from different CLI coding agents (Claude Code, Gemini CLI, OpenAI Codex, opencode).
+// from different CLI coding agents (Claude Code, Gemini CLI, OpenAI Codex, opencode, Mistral Vibe, and GitHub Copilot CLI).
 package adapters
 
 import (
@@ -13,7 +13,7 @@ type Session struct {
 	// ID is the unique identifier for this session (format varies by source)
 	ID string `json:"id"`
 
-	// Source identifies which CLI coding agent created this session (e.g., "claude", "gemini", "codex", "opencode")
+	// Source identifies which CLI coding agent created this session (e.g., "claude", "gemini", "codex", "opencode", "mistral", "copilot")
 	Source string `json:"source"`
 
 	// ProjectPath is the absolute path to the project directory where this session occurred

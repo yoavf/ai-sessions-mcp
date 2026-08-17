@@ -1,15 +1,160 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yoavf/ai-sessions-mcp/adapters"
 	"github.com/yoavf/ai-sessions-mcp/search"
 )
+
+func TestMCPServerProcess(t *testing.T) {
+	if os.Getenv("AI_SESSIONS_MCP_TEST_PROCESS") != "1" {
+		return
+	}
+	os.Args = []string{os.Args[0]}
+	main()
+	os.Exit(0)
+}
+
+func TestVersionProcess(t *testing.T) {
+	if os.Getenv("AI_SESSIONS_VERSION_TEST_PROCESS") != "1" {
+		return
+	}
+	os.Args = []string{os.Args[0], "--version"}
+	main()
+	os.Exit(0)
+}
+
+func TestVersionUsesBuildVersion(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestVersionProcess$")
+	cmd.Env = append(os.Environ(), "AI_SESSIONS_VERSION_TEST_PROCESS=1")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("version command failed: %v", err)
+	}
+	if got, want := string(output), "aisessions version dev\n"; got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
+	}
+}
+
+func overrideEnv(environ []string, overrides ...string) []string {
+	overrideKeys := make(map[string]struct{}, len(overrides))
+	for _, entry := range overrides {
+		key, _, _ := strings.Cut(entry, "=")
+		overrideKeys[strings.ToUpper(key)] = struct{}{}
+	}
+
+	result := make([]string, 0, len(environ)+len(overrides))
+	for _, entry := range environ {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, overridden := overrideKeys[strings.ToUpper(key)]; !overridden {
+			result = append(result, entry)
+		}
+	}
+	return append(result, overrides...)
+}
+
+func TestOverrideEnvReplacesExistingValuesCaseInsensitively(t *testing.T) {
+	got := overrideEnv(
+		[]string{"HOME=/real-home", "Path=/bin", "home=/duplicate-home"},
+		"HOME=/test-home",
+		"USERPROFILE=/test-home",
+	)
+	want := []string{"Path=/bin", "HOME=/test-home", "USERPROFILE=/test-home"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("overrideEnv() = %q, want %q", got, want)
+	}
+}
+
+func TestMCPStdioServerListsAndCallsReadOnlyTools(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	testHome := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMCPServerProcess$")
+	cmd.Env = overrideEnv(os.Environ(),
+		"AI_SESSIONS_MCP_TEST_PROCESS=1",
+		"HOME="+testHome,
+		"USERPROFILE="+testHome,
+	)
+
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "ai-sessions-test-client",
+		Version: "1.0.0",
+	}, nil)
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		t.Fatalf("failed to connect over stdio: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	toolsResult, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("failed to list tools: %v", err)
+	}
+
+	wantTools := map[string]bool{
+		"list_available_sources": false,
+		"list_sessions":          false,
+		"search_sessions":        false,
+		"get_session":            false,
+	}
+	for _, tool := range toolsResult.Tools {
+		if _, ok := wantTools[tool.Name]; !ok {
+			t.Fatalf("unexpected tool %q", tool.Name)
+		}
+		wantTools[tool.Name] = true
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			t.Errorf("tool %q must advertise readOnlyHint", tool.Name)
+		}
+	}
+	for name, found := range wantTools {
+		if !found {
+			t.Errorf("missing tool %q", name)
+		}
+	}
+
+	callResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "list_available_sources",
+		Arguments: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("failed to call list_available_sources: %v", err)
+	}
+	if callResult.IsError {
+		t.Fatal("list_available_sources returned an MCP error")
+	}
+	if len(callResult.Content) != 1 {
+		t.Fatalf("expected one content block, got %d", len(callResult.Content))
+	}
+	textContent, ok := callResult.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected text content, got %T", callResult.Content[0])
+	}
+	var payload struct {
+		Count int `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(textContent.Text), &payload); err != nil {
+		t.Fatalf("invalid JSON tool result: %v", err)
+	}
+	if payload.Count != 6 {
+		t.Fatalf("expected 6 available sources, got %d", payload.Count)
+	}
+	cachePath := filepath.Join(testHome, ".cache", "ai-sessions", "search.db")
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("server did not create its cache under the isolated test home: %v", err)
+	}
+}
 
 type stubAdapter struct {
 	sessions  []adapters.Session

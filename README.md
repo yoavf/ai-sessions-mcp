@@ -1,6 +1,6 @@
 # AI Sessions MCP Server
 
-An MCP server that makes sessions from Claude Code, OpenAI Codex, Gemini CLI and opencode available to any MCP compatible client.
+An MCP server that makes sessions from Claude Code, OpenAI Codex, Gemini CLI, opencode, Mistral Vibe, and GitHub Copilot CLI available to any MCP-compatible client.
 
 *Mostly written using Claude Code.*
 
@@ -44,7 +44,7 @@ Download pre-built binaries from [GitHub Releases](https://github.com/yoavf/ai-s
 
 ### Build from Source
 
-**Prerequisites**: Go 1.25 or later
+**Prerequisites**: Go 1.25.13 or later
 
 ```bash
 go build -o bin/aisessions ./cmd/ai-sessions
@@ -54,28 +54,41 @@ go build -o bin/aisessions ./cmd/ai-sessions
 
 After installation, configure your MCP client to use the binary:
 
-#### Claude Code
+#### Claude Code CLI
 
 ```bash
-claude mcp add ai-sessions ~/.aisessions/bin/aisessions
+claude mcp add --scope user --transport stdio ai-sessions -- ~/.aisessions/bin/aisessions
 ```
 
 Or if using a custom install location:
 ```bash
-claude mcp add ai-sessions /path/to/aisessions
+claude mcp add --scope user --transport stdio ai-sessions -- /path/to/aisessions
 ```
 
-#### Codex CLI
+Verify the connection with `claude mcp get ai-sessions`.
 
-Edit `~/.codex/config.toml`:
+#### Codex CLI and ChatGPT desktop app
+
+Add the server from the CLI:
+
+```bash
+codex mcp add ai-sessions -- ~/.aisessions/bin/aisessions
+```
+
+Codex CLI and the ChatGPT desktop app share `~/.codex/config.toml`, so the server is available in both after you restart the desktop app. In ChatGPT, open **Settings** → **MCP servers** to check its status, or type `/mcp` in the composer.
+
+For manual configuration, use an absolute path (the command is launched directly, without shell expansion):
+
 ```toml
 [mcp_servers.ai_sessions]
-command = "~/.aisessions/bin/aisessions"
+command = "/Users/YOUR_USERNAME/.aisessions/bin/aisessions"
 ```
+
+Replace `YOUR_USERNAME` with your actual username, or use your custom install path.
 
 #### Claude Desktop
 
-Add to your config file (`Settings` → `Developer` → `Edit Config`):
+Add to the config file opened from **Settings** → **Developer** → **Edit Config**:
 ```json
 {
   "mcpServers": {
@@ -88,7 +101,7 @@ Add to your config file (`Settings` → `Developer` → `Edit Config`):
 
 Replace `YOUR_USERNAME` with your actual username, or use your custom install path.
 
-**Restart Claude Desktop** to activate.
+Restart Claude Desktop, then open **Developer** settings or **+** → **Connectors** in a conversation to check the connection. Claude Desktop also supports packaged `.mcpb` extensions, but direct configuration remains useful for a standalone downloaded binary.
 
 ## CLI Upload
 
@@ -127,7 +140,7 @@ aisessions upload /path/to/session.jsonl --title "Custom Title"
 
 Once configured as an MCP server, you can ask:
 
-- "Let's continue my latest sesion from Claude Code"
+- "Let's continue my latest session from Claude Code"
 - "Show me my recent Codex sessions"
 - "Search my sessions for authentication bugs"
 - "How many times did Claude tell me I was [absolutely right](https://absolutelyright.lol) yesterday?"
@@ -140,6 +153,8 @@ The server reads session files stored locally by various CLI coding agents:
 - **Gemini CLI**: `~/.gemini/tmp/[PROJECT_HASH]/chats/session-*.json`
 - **OpenAI Codex**: `~/.codex/sessions/` and `~/.codex/archived_sessions/`
 - **opencode**: `~/.local/share/opencode/storage/`
+- **Mistral Vibe**: `~/.vibe/logs/session/`
+- **GitHub Copilot CLI**: `~/.copilot/session-state/`
 
 When you ask your AI agent to list or search sessions, it automatically uses these agents to access your session history.
 
@@ -152,7 +167,7 @@ Shows which AI CLI coding agents have sessions on your system.
 Lists recent sessions from all projects (newest first).
 
 **Arguments**:
-- `source` (optional): Filter by `claude`, `gemini`, `codex`, or `opencode`
+- `source` (optional): Filter by `claude`, `gemini`, `codex`, `opencode`, `mistral`, or `copilot`
 - `project_path` (optional): Filter by specific project directory
 - `limit` (optional): Max results (default: 10)
 

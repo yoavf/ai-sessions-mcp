@@ -12,12 +12,12 @@ jobs:
   release:
     runs-on: macos-14
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
-        go-version: '1.25'
+        go-version: '1.25.13'
 
     - name: Import signing certificate
       env:
@@ -42,10 +42,13 @@ jobs:
       run: |
         set -eo pipefail
         mkdir -p bin
-        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-amd64 ./cmd/ai-sessions
-        CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-darwin-arm64 ./cmd/ai-sessions
-        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-linux-amd64 ./cmd/ai-sessions
-        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/ai-sessions-windows-amd64.exe ./cmd/ai-sessions
+        VERSION="${GITHUB_REF_NAME#v}"
+        LDFLAGS="-s -w -X main.version=$VERSION"
+        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o bin/ai-sessions-darwin-amd64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o bin/ai-sessions-darwin-arm64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o bin/ai-sessions-linux-amd64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o bin/ai-sessions-linux-arm64 ./cmd/ai-sessions
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o bin/ai-sessions-windows-amd64.exe ./cmd/ai-sessions
 
     - name: Sign and notarize macOS binaries
       env:
@@ -71,6 +74,8 @@ jobs:
         done
         rm -f bin/ai-sessions-linux-amd64.zip
         /usr/bin/zip -j bin/ai-sessions-linux-amd64.zip bin/ai-sessions-linux-amd64
+        rm -f bin/ai-sessions-linux-arm64.zip
+        /usr/bin/zip -j bin/ai-sessions-linux-arm64.zip bin/ai-sessions-linux-arm64
         rm -f bin/ai-sessions-windows-amd64.zip
         /usr/bin/zip -j bin/ai-sessions-windows-amd64.zip bin/ai-sessions-windows-amd64.exe
         /usr/bin/codesign --verify --strict --verbose=2 bin/ai-sessions-darwin-amd64
@@ -79,17 +84,18 @@ jobs:
     - name: Generate checksums
       run: |
         cd bin
-        shasum -a 256 *.zip > checksums.txt
+        shasum -a 256 ./*.zip > checksums.txt
         echo "Generated checksums:"
         cat checksums.txt
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         files: |
           bin/ai-sessions-darwin-amd64.zip
           bin/ai-sessions-darwin-arm64.zip
           bin/ai-sessions-linux-amd64.zip
+          bin/ai-sessions-linux-arm64.zip
           bin/ai-sessions-windows-amd64.zip
           bin/checksums.txt
         generate_release_notes: true

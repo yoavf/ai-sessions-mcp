@@ -109,7 +109,10 @@ print_message info "Installing ${ORANGE}aisessions ${GREEN}version: ${YELLOW}$LA
 
 # Create temporary directory
 TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
+cleanup() {
+  rm -rf -- "$TMP_DIR"
+}
+trap cleanup EXIT
 
 # Download binary with progress bar
 ZIP_FILE="$TMP_DIR/$FILENAME"
@@ -236,7 +239,7 @@ if [[ ":$PATH:" != *":$INSTALL_PATH:"* ]]; then
     echo "Option 2 - Windows Environment Variables:"
     echo "  1. Search 'Environment Variables' in Windows Settings"
     echo "  2. Edit your user PATH"
-    echo "  3. Add: %USERPROFILE%\\.aisessions\\bin"
+    printf '%s\n' '  3. Add: %USERPROFILE%\.aisessions\bin'
   else
     echo "Add to your $CURRENT_SHELL profile:"
     echo ""

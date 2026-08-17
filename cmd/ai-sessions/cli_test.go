@@ -168,6 +168,55 @@ func TestFormatTableHeader(t *testing.T) {
 	}
 }
 
+type recordingSessionProgress struct {
+	events *[]string
+}
+
+func (p *recordingSessionProgress) Start() {
+	*p.events = append(*p.events, "start")
+}
+
+func (p *recordingSessionProgress) Stop() {
+	*p.events = append(*p.events, "stop")
+}
+
+func TestLoadSessionsWithProgressStopsAfterSuccess(t *testing.T) {
+	var events []string
+	progress := &recordingSessionProgress{events: &events}
+	want := []adapters.Session{{ID: "session-1"}}
+
+	got, err := loadSessionsWithProgress(progress, func() ([]adapters.Session, error) {
+		events = append(events, "load")
+		return want, nil
+	})
+	if err != nil {
+		t.Fatalf("loadSessionsWithProgress returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != want[0].ID {
+		t.Fatalf("unexpected sessions: %+v", got)
+	}
+	if strings.Join(events, ",") != "start,load,stop" {
+		t.Fatalf("unexpected progress events: %v", events)
+	}
+}
+
+func TestLoadSessionsWithProgressStopsAfterError(t *testing.T) {
+	var events []string
+	progress := &recordingSessionProgress{events: &events}
+	wantErr := fmt.Errorf("discovery failed")
+
+	_, err := loadSessionsWithProgress(progress, func() ([]adapters.Session, error) {
+		events = append(events, "load")
+		return nil, wantErr
+	})
+	if err != wantErr {
+		t.Fatalf("loadSessionsWithProgress error=%v want %v", err, wantErr)
+	}
+	if strings.Join(events, ",") != "start,load,stop" {
+		t.Fatalf("unexpected progress events: %v", events)
+	}
+}
+
 func TestGetAPIURL(t *testing.T) {
 	if got := getAPIURL(""); got != defaultAPIURL {
 		t.Fatalf("getAPIURL empty returned %q want %q", got, defaultAPIURL)

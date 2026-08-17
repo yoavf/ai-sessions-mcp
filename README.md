@@ -150,11 +150,11 @@ Once configured as an MCP server, you can ask:
 The server reads session files stored locally by various CLI coding agents:
 
 - **Claude Code**: `~/.claude/projects/[PROJECT_DIR]/*.jsonl`
-- **Gemini CLI**: `~/.gemini/tmp/[PROJECT_HASH]/chats/session-*.json`
+- **Gemini CLI**: `~/.gemini/tmp/[PROJECT_HASH]/chats/session-*.jsonl` (plus legacy `.json` recordings)
 - **OpenAI Codex**: `~/.codex/sessions/` and `~/.codex/archived_sessions/`
-- **opencode**: `~/.local/share/opencode/storage/`
+- **opencode**: `~/.local/share/opencode/opencode.db` (plus the legacy `storage/` JSON tree)
 - **Mistral Vibe**: `~/.vibe/logs/session/`
-- **GitHub Copilot CLI**: `~/.copilot/session-state/`
+- **GitHub Copilot CLI**: `~/.copilot/session-state/[SESSION_ID]/events.jsonl` (plus legacy flat JSONL files)
 
 When you ask your AI agent to list or search sessions, it automatically uses these agents to access your session history.
 

@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,14 +47,45 @@ func TestVersionUsesBuildVersion(t *testing.T) {
 	}
 }
 
+func overrideEnv(environ []string, overrides ...string) []string {
+	overrideKeys := make(map[string]struct{}, len(overrides))
+	for _, entry := range overrides {
+		key, _, _ := strings.Cut(entry, "=")
+		overrideKeys[strings.ToUpper(key)] = struct{}{}
+	}
+
+	result := make([]string, 0, len(environ)+len(overrides))
+	for _, entry := range environ {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, overridden := overrideKeys[strings.ToUpper(key)]; !overridden {
+			result = append(result, entry)
+		}
+	}
+	return append(result, overrides...)
+}
+
+func TestOverrideEnvReplacesExistingValuesCaseInsensitively(t *testing.T) {
+	got := overrideEnv(
+		[]string{"HOME=/real-home", "Path=/bin", "home=/duplicate-home"},
+		"HOME=/test-home",
+		"USERPROFILE=/test-home",
+	)
+	want := []string{"Path=/bin", "HOME=/test-home", "USERPROFILE=/test-home"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("overrideEnv() = %q, want %q", got, want)
+	}
+}
+
 func TestMCPStdioServerListsAndCallsReadOnlyTools(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	testHome := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestMCPServerProcess$")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = overrideEnv(os.Environ(),
 		"AI_SESSIONS_MCP_TEST_PROCESS=1",
-		"HOME="+t.TempDir(),
+		"HOME="+testHome,
+		"USERPROFILE="+testHome,
 	)
 
 	client := mcp.NewClient(&mcp.Implementation{
@@ -116,6 +149,10 @@ func TestMCPStdioServerListsAndCallsReadOnlyTools(t *testing.T) {
 	}
 	if payload.Count != 6 {
 		t.Fatalf("expected 6 available sources, got %d", payload.Count)
+	}
+	cachePath := filepath.Join(testHome, ".cache", "ai-sessions", "search.db")
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("server did not create its cache under the isolated test home: %v", err)
 	}
 }
 

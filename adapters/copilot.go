@@ -551,31 +551,28 @@ func orderCopilotSessionFiles(files []string) []copilotSessionFile {
 	return ordered
 }
 
-// copilotSessionStartTimestamp reads only until session.start, which is the
-// first event in current Copilot logs. Legacy logs without that event fall
-// back to file modification time.
+// copilotSessionStartTimestamp inspects the first event, where session.start
+// appears in current Copilot logs. Legacy logs fall back to file modification
+// time without an additional full-file scan.
 func copilotSessionStartTimestamp(filePath string) time.Time {
 	file, err := os.Open(filePath)
 	if err == nil {
 		defer file.Close()
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
+		if scanner.Scan() {
 			var event copilotEvent
-			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Type != "session.start" {
-				continue
+			if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Type == "session.start" {
+				var data copilotSessionStart
+				if json.Unmarshal(event.Data, &data) == nil {
+					if timestamp, err := time.Parse(time.RFC3339Nano, data.StartTime); err == nil {
+						return timestamp
+					}
+					if timestamp, err := time.Parse(time.RFC3339, data.StartTime); err == nil {
+						return timestamp
+					}
+				}
 			}
-			var data copilotSessionStart
-			if json.Unmarshal(event.Data, &data) != nil {
-				break
-			}
-			if timestamp, err := time.Parse(time.RFC3339Nano, data.StartTime); err == nil {
-				return timestamp
-			}
-			if timestamp, err := time.Parse(time.RFC3339, data.StartTime); err == nil {
-				return timestamp
-			}
-			break
 		}
 	}
 	if stat, err := os.Stat(filePath); err == nil {

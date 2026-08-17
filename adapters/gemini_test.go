@@ -1,7 +1,9 @@
 package adapters
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -210,5 +212,12 @@ func TestLoadGeminiSessionAcceptsJSONLRecordLargerThanTenMiB(t *testing.T) {
 	}
 	if got := session.Messages[0].Content; got != largeContent {
 		t.Fatalf("large message content was not preserved: got %T with length %d", got, len(fmt.Sprint(got)))
+	}
+}
+
+func TestReadGeminiJSONLRecordEnforcesLimit(t *testing.T) {
+	reader := bufio.NewReaderSize(strings.NewReader("12345678\n"), 4)
+	if _, err := readGeminiJSONLRecord(reader, 8); !errors.Is(err, errGeminiJSONLRecordTooLarge) {
+		t.Fatalf("readGeminiJSONLRecord error = %v, want %v", err, errGeminiJSONLRecordTooLarge)
 	}
 }

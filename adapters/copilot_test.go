@@ -109,3 +109,20 @@ func TestCopilotSearchLimitReturnsNewestMatch(t *testing.T) {
 		t.Fatalf("timestamp = %v, want %v", matches[0].Timestamp, wantTimestamp)
 	}
 }
+
+func TestCopilotSessionTimestampFallsBackWhenFirstEventIsNotSessionStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.jsonl")
+	events := `{"type":"user.message","data":{"content":"legacy prompt"}}` + "\n" +
+		`{"type":"session.start","data":{"sessionId":"not-current-format","startTime":"2026-08-17T10:00:00Z"}}` + "\n"
+	if err := os.WriteFile(path, []byte(events), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modTime := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, modTime, modTime); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := copilotSessionStartTimestamp(path); !got.Equal(modTime) {
+		t.Fatalf("timestamp = %v, want file modification time %v", got, modTime)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,10 @@ import (
 	"strings"
 	"time"
 )
+
+const maxGeminiJSONLRecordSize = 50 << 20
+
+var errGeminiJSONLRecordTooLarge = errors.New("Gemini JSONL record exceeds maximum size")
 
 // GeminiAdapter implements SessionAdapter for Gemini CLI sessions.
 // Gemini stores sessions as JSON files in ~/.gemini/tmp/[PROJECT_HASH]/chats/
@@ -348,21 +353,44 @@ func loadGeminiSession(filePath string) (*geminiSession, error) {
 
 	reader := bufio.NewReader(file)
 	for {
-		line, readErr := reader.ReadBytes('\n')
-		if len(line) > 0 {
-			processRecord(line)
-		}
-		if readErr == io.EOF {
+		line, readErr := readGeminiJSONLRecord(reader, maxGeminiJSONLRecordSize)
+		if errors.Is(readErr, io.EOF) {
 			break
 		}
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to parse session JSONL: %w", readErr)
 		}
+		processRecord(line)
 	}
 	if session.SessionID == "" {
 		return nil, fmt.Errorf("failed to parse session JSONL: missing sessionId")
 	}
 	return session, nil
+}
+
+func readGeminiJSONLRecord(reader *bufio.Reader, maxSize int) ([]byte, error) {
+	record := make([]byte, 0, reader.Size())
+	for {
+		fragment, readErr := reader.ReadSlice('\n')
+		if len(fragment) > maxSize || len(record) > maxSize-len(fragment) {
+			return nil, fmt.Errorf("%w: limit is %d bytes", errGeminiJSONLRecordTooLarge, maxSize)
+		}
+		record = append(record, fragment...)
+
+		switch {
+		case readErr == nil:
+			return record, nil
+		case errors.Is(readErr, bufio.ErrBufferFull):
+			continue
+		case errors.Is(readErr, io.EOF):
+			if len(record) == 0 {
+				return nil, io.EOF
+			}
+			return record, nil
+		default:
+			return nil, readErr
+		}
+	}
 }
 
 // extractFirstLineFromContent extracts the first line from various content formats.

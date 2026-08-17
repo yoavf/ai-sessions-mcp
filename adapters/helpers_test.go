@@ -96,11 +96,34 @@ func TestCodexIsSessionPrefix(t *testing.T) {
 	}{
 		{"<user_instructions>hi</user_instructions>", true},
 		{"<environment_context>info</environment_context>", true},
+		{"<recommended_plugins>plugins</recommended_plugins><environment_context>info</environment_context>", true},
+		{"<app-context mode=\"desktop\">info</app-context>", true},
+		{"<system-reminder>info</system-reminder><turn_aborted/>", true},
+		{"<request>real user request</request>", false},
+		{"<environment_context>info</environment_context>real user request", false},
 		{" user prompt ", false},
 	}
 	for _, tc := range table {
 		if got := adapter.isSessionPrefix(tc.text); got != tc.want {
 			t.Fatalf("isSessionPrefix(%q)=%v want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestCodexStripSessionPrefixes(t *testing.T) {
+	adapter := &CodexAdapter{}
+	table := []struct {
+		text string
+		want string
+	}{
+		{"<recommended_plugins>plugins</recommended_plugins><environment_context>info</environment_context>", ""},
+		{"<recommended_plugins>plugins</recommended_plugins>real user request", "real user request"},
+		{"<request>real user request</request>", "<request>real user request</request>"},
+		{"<recommended_plugins>unterminated", "<recommended_plugins>unterminated"},
+	}
+	for _, tc := range table {
+		if got := adapter.stripSessionPrefixes(tc.text); got != tc.want {
+			t.Fatalf("stripSessionPrefixes(%q)=%q want %q", tc.text, got, tc.want)
 		}
 	}
 }

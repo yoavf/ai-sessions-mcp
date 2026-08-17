@@ -331,9 +331,8 @@ func (c *CodexAdapter) scanRolloutFile(filePath, targetCWD string) (*sessionInfo
 			if riType, ok := entry.Payload["type"].(string); ok && riType == "message" {
 				if role, ok := entry.Payload["role"].(string); ok && role == "user" {
 					if content, ok := entry.Payload["content"].([]interface{}); ok {
-						text := c.extractUserText(content)
-						trimmed := strings.TrimSpace(text)
-						if trimmed == "" || c.isSessionPrefix(trimmed) {
+						text := c.stripSessionPrefixes(c.extractUserText(content))
+						if text == "" {
 							continue
 						}
 
@@ -382,15 +381,82 @@ func (c *CodexAdapter) extractUserText(content []interface{}) string {
 	return strings.Join(parts, "")
 }
 
-// isSessionPrefix checks if a message is a session prefix (user_instructions or environment_context).
-// The text parameter is expected to already be trimmed.
+// isSessionPrefix checks whether a user-role message is composed entirely of
+// provider-local context envelopes.
 func (c *CodexAdapter) isSessionPrefix(text string) bool {
-	if text == "" {
+	trimmed := strings.TrimSpace(text)
+	return trimmed != "" && c.stripSessionPrefixes(trimmed) == ""
+}
+
+// stripSessionPrefixes removes provider-local XML envelopes from the start of
+// a user-role message. Current Codex versions may concatenate several
+// input_text blocks, such as recommended_plugins and environment_context, into
+// one message. Returning any remainder preserves a real prompt that happens to
+// share the same message record.
+func (c *CodexAdapter) stripSessionPrefixes(text string) string {
+	remaining := strings.TrimSpace(text)
+	for remaining != "" {
+		openingEnd := strings.IndexByte(remaining, '>')
+		if openingEnd < 2 || remaining[0] != '<' || remaining[1] == '/' {
+			break
+		}
+
+		opening := strings.TrimSpace(remaining[1:openingEnd])
+		selfClosing := strings.HasSuffix(opening, "/")
+		opening = strings.TrimSpace(strings.TrimSuffix(opening, "/"))
+		nameEnd := strings.IndexAny(opening, " \t\r\n")
+		if nameEnd >= 0 {
+			opening = opening[:nameEnd]
+		}
+		if !isCodexContextEnvelope(opening) {
+			break
+		}
+
+		if selfClosing {
+			remaining = strings.TrimSpace(remaining[openingEnd+1:])
+			continue
+		}
+
+		closingTag := "</" + strings.ToLower(opening) + ">"
+		afterOpening := remaining[openingEnd+1:]
+		closingStart := strings.Index(strings.ToLower(afterOpening), closingTag)
+		if closingStart < 0 {
+			break
+		}
+		remaining = strings.TrimSpace(afterOpening[closingStart+len(closingTag):])
+	}
+	return remaining
+}
+
+func isCodexContextEnvelope(name string) bool {
+	normalized := strings.ReplaceAll(strings.ToLower(name), "-", "_")
+	switch normalized {
+	case "app_context",
+		"bash_input",
+		"bash_stderr",
+		"bash_stdout",
+		"codex_delegation",
+		"collaboration_mode",
+		"command_args",
+		"command_message",
+		"command_name",
+		"environment_context",
+		"in_app_browser_context",
+		"local_command_caveat",
+		"local_command_stderr",
+		"local_command_stdout",
+		"permissions",
+		"realtime_delegation",
+		"recommended_plugins",
+		"skill",
+		"system_reminder",
+		"task_notification",
+		"turn_aborted",
+		"user_instructions":
+		return true
+	default:
 		return false
 	}
-	lower := strings.ToLower(text)
-	return (strings.HasPrefix(lower, "<user_instructions>") && strings.HasSuffix(lower, "</user_instructions>")) ||
-		(strings.HasPrefix(lower, "<environment_context>") && strings.HasSuffix(lower, "</environment_context>"))
 }
 
 // extractFirstLine extracts the first non-empty line from text.
@@ -508,8 +574,11 @@ func (c *CodexAdapter) readAllMessages(filePath string) ([]Message, error) {
 				}
 
 				// Skip session prefix messages
-				if role == "user" && c.isSessionPrefix(strings.TrimSpace(message.Content)) {
-					continue
+				if role == "user" {
+					message.Content = c.stripSessionPrefixes(message.Content)
+					if message.Content == "" {
+						continue
+					}
 				}
 
 				messages = append(messages, message)

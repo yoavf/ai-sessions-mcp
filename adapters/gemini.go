@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -39,13 +40,17 @@ func (g *GeminiAdapter) Name() string {
 
 // geminiSession represents the structure of a Gemini session JSON file.
 type geminiSession struct {
-	SessionID string          `json:"sessionId"`
-	StartTime string          `json:"startTime,omitempty"`
-	Messages  []geminiMessage `json:"messages"`
+	SessionID   string          `json:"sessionId"`
+	ProjectHash string          `json:"projectHash,omitempty"`
+	StartTime   string          `json:"startTime,omitempty"`
+	LastUpdated string          `json:"lastUpdated,omitempty"`
+	Summary     string          `json:"summary,omitempty"`
+	Messages    []geminiMessage `json:"messages"`
 }
 
 // geminiMessage represents a single message in a Gemini session.
 type geminiMessage struct {
+	ID        string           `json:"id,omitempty"`
 	Role      string           `json:"role,omitempty"`
 	Type      string           `json:"type,omitempty"`
 	Content   interface{}      `json:"content"`
@@ -90,8 +95,8 @@ func (g *GeminiAdapter) ListSessions(projectPath string, limit int) ([]Session, 
 		return []Session{}, nil // No sessions for this project
 	}
 
-	// Read all session-*.json files
-	files, err := filepath.Glob(filepath.Join(chatsDir, "session-*.json"))
+	// Read current JSONL recordings and legacy JSON recordings.
+	files, err := geminiSessionFiles(chatsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list session files: %w", err)
 	}
@@ -139,7 +144,7 @@ func (g *GeminiAdapter) listAllSessions(geminiTmpDir string, limit int) ([]Sessi
 		}
 
 		chatsDir := filepath.Join(geminiTmpDir, dir.Name(), "chats")
-		files, err := filepath.Glob(filepath.Join(chatsDir, "session-*.json"))
+		files, err := geminiSessionFiles(chatsDir)
 		if err != nil {
 			continue
 		}
@@ -167,26 +172,38 @@ func (g *GeminiAdapter) listAllSessions(geminiTmpDir string, limit int) ([]Sessi
 	return allSessions, nil
 }
 
+func geminiSessionFiles(chatsDir string) ([]string, error) {
+	patterns := []string{
+		filepath.Join(chatsDir, "session-*.jsonl"),
+		filepath.Join(chatsDir, "session-*.json"),
+	}
+	var files []string
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, matches...)
+	}
+	return files, nil
+}
+
 // parseSessionMetadata extracts metadata from a Gemini session file.
 func (g *GeminiAdapter) parseSessionMetadata(filePath, projectPath string) (Session, error) {
-	data, err := os.ReadFile(filePath)
+	geminiSess, err := loadGeminiSession(filePath)
 	if err != nil {
-		return Session{}, fmt.Errorf("failed to read session file: %w", err)
-	}
-
-	var geminiSess geminiSession
-	if err := json.Unmarshal(data, &geminiSess); err != nil {
-		return Session{}, fmt.Errorf("failed to parse session JSON: %w", err)
+		return Session{}, err
 	}
 
 	hashDir := extractHashFromPath(filePath)
-	resolvedProjectPath := g.resolveProjectPath(hashDir, projectPath, &geminiSess)
+	resolvedProjectPath := g.resolveProjectPath(hashDir, projectPath, geminiSess)
 
 	session := Session{
 		ID:          geminiSess.SessionID,
 		Source:      "gemini",
 		ProjectPath: resolvedProjectPath,
 		FilePath:    filePath,
+		Summary:     geminiSess.Summary,
 	}
 
 	// Parse timestamp from first message or startTime
@@ -222,6 +239,119 @@ func (g *GeminiAdapter) parseSessionMetadata(filePath, projectPath string) (Sess
 
 	session.UserMessageCount = userCount
 
+	return session, nil
+}
+
+// loadGeminiSession supports both legacy whole-document JSON recordings and
+// current append-only JSONL recordings. JSONL files may contain metadata
+// updates, message replacements, and rewind markers.
+func loadGeminiSession(filePath string) (*geminiSession, error) {
+	if filepath.Ext(filePath) == ".json" {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read session file: %w", err)
+		}
+		var session geminiSession
+		if err := json.Unmarshal(data, &session); err != nil {
+			return nil, fmt.Errorf("failed to parse session JSON: %w", err)
+		}
+		return &session, nil
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read session file: %w", err)
+	}
+	defer file.Close()
+
+	session := &geminiSession{}
+	messageIndex := make(map[string]int)
+	rebuildIndex := func() {
+		clear(messageIndex)
+		for i, message := range session.Messages {
+			if message.ID != "" {
+				messageIndex[message.ID] = i
+			}
+		}
+	}
+	applyMetadata := func(raw map[string]json.RawMessage) {
+		if value, ok := raw["sessionId"]; ok {
+			_ = json.Unmarshal(value, &session.SessionID)
+		}
+		if value, ok := raw["projectHash"]; ok {
+			_ = json.Unmarshal(value, &session.ProjectHash)
+		}
+		if value, ok := raw["startTime"]; ok {
+			_ = json.Unmarshal(value, &session.StartTime)
+		}
+		if value, ok := raw["lastUpdated"]; ok {
+			_ = json.Unmarshal(value, &session.LastUpdated)
+		}
+		if value, ok := raw["summary"]; ok {
+			_ = json.Unmarshal(value, &session.Summary)
+		}
+		if value, ok := raw["messages"]; ok {
+			var messages []geminiMessage
+			if json.Unmarshal(value, &messages) == nil {
+				session.Messages = messages
+				rebuildIndex()
+			}
+		}
+	}
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		var record map[string]json.RawMessage
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			continue
+		}
+
+		if value, ok := record["$rewindTo"]; ok {
+			var messageID string
+			if json.Unmarshal(value, &messageID) == nil {
+				if index, found := messageIndex[messageID]; found {
+					session.Messages = session.Messages[:index]
+					rebuildIndex()
+				} else {
+					session.Messages = nil
+					clear(messageIndex)
+				}
+			}
+			continue
+		}
+
+		if value, ok := record["$set"]; ok {
+			var update map[string]json.RawMessage
+			if json.Unmarshal(value, &update) == nil {
+				applyMetadata(update)
+			}
+			continue
+		}
+
+		if _, hasID := record["id"]; hasID {
+			if _, hasType := record["type"]; hasType {
+				var message geminiMessage
+				if json.Unmarshal(scanner.Bytes(), &message) == nil {
+					if index, found := messageIndex[message.ID]; found {
+						session.Messages[index] = message
+					} else {
+						messageIndex[message.ID] = len(session.Messages)
+						session.Messages = append(session.Messages, message)
+					}
+				}
+				continue
+			}
+		}
+
+		applyMetadata(record)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to parse session JSONL: %w", err)
+	}
+	if session.SessionID == "" {
+		return nil, fmt.Errorf("failed to parse session JSONL: missing sessionId")
+	}
 	return session, nil
 }
 
@@ -275,20 +405,15 @@ func (g *GeminiAdapter) GetSession(sessionID string, page, pageSize int) ([]Mess
 
 		// Check for matching session file
 		chatsDir := filepath.Join(geminiTmpDir, dir.Name(), "chats")
-		files, err := filepath.Glob(filepath.Join(chatsDir, "session-*.json"))
+		files, err := geminiSessionFiles(chatsDir)
 		if err != nil {
 			continue
 		}
 
 		for _, file := range files {
 			// Read and check if this is the right session
-			data, err := os.ReadFile(file)
+			sess, err := loadGeminiSession(file)
 			if err != nil {
-				continue
-			}
-
-			var sess geminiSession
-			if err := json.Unmarshal(data, &sess); err != nil {
 				continue
 			}
 
@@ -329,14 +454,9 @@ func (g *GeminiAdapter) GetSession(sessionID string, page, pageSize int) ([]Mess
 
 // readAllMessages reads all messages from a Gemini session file.
 func (g *GeminiAdapter) readAllMessages(filePath string) ([]Message, error) {
-	data, err := os.ReadFile(filePath)
+	sess, err := loadGeminiSession(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read session file: %w", err)
-	}
-
-	var sess geminiSession
-	if err := json.Unmarshal(data, &sess); err != nil {
-		return nil, fmt.Errorf("failed to parse session JSON: %w", err)
+		return nil, err
 	}
 
 	messages := make([]Message, 0, len(sess.Messages))

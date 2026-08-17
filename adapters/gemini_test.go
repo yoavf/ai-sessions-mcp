@@ -138,3 +138,45 @@ func TestNormalizeGeminiRole(t *testing.T) {
 		}
 	}
 }
+
+func TestGeminiAdapterReadsCurrentJSONLRecordings(t *testing.T) {
+	home := t.TempDir()
+	projectPath := filepath.Join(home, "project")
+	hash := hashProjectPath(projectPath)
+	chatsDir := filepath.Join(home, ".gemini", "tmp", hash, "chats")
+	if err := os.MkdirAll(chatsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	recording := `{"sessionId":"jsonl-session","projectHash":"` + hash + `","startTime":"2026-08-11T10:00:00Z","lastUpdated":"2026-08-11T10:01:00Z"}
+{"id":"user-1","timestamp":"2026-08-11T10:00:01Z","type":"user","content":[{"text":"First current prompt"}]}
+{"id":"gemini-1","timestamp":"2026-08-11T10:00:02Z","type":"gemini","content":[{"text":"Superseded answer"}]}
+{"$rewindTo":"gemini-1"}
+{"id":"gemini-2","timestamp":"2026-08-11T10:00:03Z","type":"gemini","content":[{"text":"Current answer"}]}
+{"$set":{"summary":"Current JSONL session"}}
+`
+	path := filepath.Join(chatsDir, "session-2026-08-11T10-00-jsonl-se.jsonl")
+	if err := os.WriteFile(path, []byte(recording), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &GeminiAdapter{homeDir: home, projectCache: make(map[string]string)}
+	sessions, err := adapter.ListSessions(projectPath, 0)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected one session, got %d", len(sessions))
+	}
+	if sessions[0].ID != "jsonl-session" || sessions[0].FirstMessage != "First current prompt" || sessions[0].Summary != "Current JSONL session" {
+		t.Fatalf("unexpected session metadata: %+v", sessions[0])
+	}
+
+	messages, err := adapter.GetSession("jsonl-session", 0, 10)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	if len(messages) != 2 || messages[1].Content != "Current answer" {
+		t.Fatalf("unexpected JSONL messages: %+v", messages)
+	}
+}

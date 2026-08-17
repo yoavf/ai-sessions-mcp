@@ -50,6 +50,10 @@ type copilotSessionStart struct {
 	Producer       string `json:"producer"`
 	CopilotVersion string `json:"copilotVersion"`
 	StartTime      string `json:"startTime"`
+	Context        struct {
+		CWD     string `json:"cwd"`
+		GitRoot string `json:"gitRoot"`
+	} `json:"context"`
 }
 
 // copilotSessionInfo represents the data for a session.info event.
@@ -112,8 +116,7 @@ func (c *CopilotAdapter) ListSessions(projectPath string, limit int) ([]Session,
 		}
 	}
 
-	// Read all *.jsonl files
-	files, err := filepath.Glob(filepath.Join(sessionsDir, "*.jsonl"))
+	files, err := c.sessionFiles(sessionsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list session files: %w", err)
 	}
@@ -145,6 +148,26 @@ func (c *CopilotAdapter) ListSessions(projectPath string, limit int) ([]Session,
 	}
 
 	return sessions, nil
+}
+
+// sessionFiles returns both current Copilot session logs and the legacy flat
+// JSONL layout. Current Copilot versions store each log at
+// session-state/<session-id>/events.jsonl.
+func (c *CopilotAdapter) sessionFiles(sessionsDir string) ([]string, error) {
+	patterns := []string{
+		filepath.Join(sessionsDir, "*", "events.jsonl"),
+		filepath.Join(sessionsDir, "*.jsonl"),
+	}
+
+	var files []string
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, matches...)
+	}
+	return files, nil
 }
 
 // parseSessionMetadata extracts metadata from a Copilot CLI session file.
@@ -183,6 +206,11 @@ func (c *CopilotAdapter) parseSessionMetadata(filePath string) (Session, error) 
 			var data copilotSessionStart
 			if err := json.Unmarshal(event.Data, &data); err == nil {
 				session.ID = data.SessionID
+				if data.Context.CWD != "" {
+					session.ProjectPath = data.Context.CWD
+				} else if data.Context.GitRoot != "" {
+					session.ProjectPath = data.Context.GitRoot
+				}
 				if ts, err := time.Parse(time.RFC3339Nano, data.StartTime); err == nil {
 					session.Timestamp = ts
 				} else if ts, err := time.Parse(time.RFC3339, data.StartTime); err == nil {
@@ -240,11 +268,17 @@ func (c *CopilotAdapter) parseSessionMetadata(filePath string) (Session, error) 
 
 	// Extract session ID from filename if not found in content
 	if session.ID == "" {
-		base := filepath.Base(filePath)
-		session.ID = strings.TrimSuffix(base, ".jsonl")
+		session.ID = copilotSessionIDFromPath(filePath)
 	}
 
 	return session, nil
+}
+
+func copilotSessionIDFromPath(filePath string) string {
+	if filepath.Base(filePath) == "events.jsonl" {
+		return filepath.Base(filepath.Dir(filePath))
+	}
+	return strings.TrimSuffix(filepath.Base(filePath), ".jsonl")
 }
 
 // findCommonDirectory finds the longest common directory path from a list of file paths.
@@ -273,9 +307,8 @@ func findCommonDirectory(paths []string) string {
 func (c *CopilotAdapter) GetSession(sessionID string, page, pageSize int) ([]Message, error) {
 	sessionsDir := filepath.Join(c.homeDir, ".copilot", "session-state")
 
-	// Try to find the session file directly by ID
-	sessionFile := filepath.Join(sessionsDir, sessionID+".jsonl")
-	if _, err := os.Stat(sessionFile); os.IsNotExist(err) {
+	sessionFile := c.resolveSessionFile(sessionsDir, sessionID)
+	if sessionFile == "" {
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 
@@ -297,6 +330,19 @@ func (c *CopilotAdapter) GetSession(sessionID string, page, pageSize int) ([]Mes
 	}
 
 	return messages[start:end], nil
+}
+
+func (c *CopilotAdapter) resolveSessionFile(sessionsDir, sessionID string) string {
+	candidates := []string{
+		filepath.Join(sessionsDir, sessionID, "events.jsonl"),
+		filepath.Join(sessionsDir, sessionID+".jsonl"),
+	}
+	for _, candidate := range candidates {
+		if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // readAllMessages reads all messages from a Copilot CLI session file.
@@ -435,7 +481,7 @@ func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([
 		}
 	}
 
-	files, err := filepath.Glob(filepath.Join(sessionsDir, "*.jsonl"))
+	files, err := c.sessionFiles(sessionsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list session files: %w", err)
 	}
@@ -466,9 +512,6 @@ func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([
 
 		if found {
 			matches = append(matches, session)
-			if limit > 0 && len(matches) >= limit {
-				break
-			}
 		}
 	}
 
@@ -476,6 +519,9 @@ func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].Timestamp.After(matches[j].Timestamp)
 	})
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+	}
 
 	return matches, nil
 }
@@ -514,6 +560,11 @@ func (c *CopilotAdapter) parseSessionWithContents(filePath string) (Session, []s
 			var data copilotSessionStart
 			if err := json.Unmarshal(event.Data, &data); err == nil {
 				session.ID = data.SessionID
+				if data.Context.CWD != "" {
+					session.ProjectPath = data.Context.CWD
+				} else if data.Context.GitRoot != "" {
+					session.ProjectPath = data.Context.GitRoot
+				}
 				if ts, err := time.Parse(time.RFC3339Nano, data.StartTime); err == nil {
 					session.Timestamp = ts
 				} else if ts, err := time.Parse(time.RFC3339, data.StartTime); err == nil {
@@ -573,8 +624,7 @@ func (c *CopilotAdapter) parseSessionWithContents(filePath string) (Session, []s
 	}
 
 	if session.ID == "" {
-		base := filepath.Base(filePath)
-		session.ID = strings.TrimSuffix(base, ".jsonl")
+		session.ID = copilotSessionIDFromPath(filePath)
 	}
 
 	return session, contents, nil

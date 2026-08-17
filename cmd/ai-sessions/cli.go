@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/manifoldco/promptui"
 	"github.com/yoavf/ai-sessions-mcp/adapters"
 	"golang.org/x/term"
@@ -444,19 +445,38 @@ func formatTableHeader() string {
 	return fmt.Sprintf("  %-12s  %-12s  %5s  %-28s  %s", "TIME", "AGENT", "#USER", "PROJECT", "MESSAGE")
 }
 
-// selectSessionInteractively displays an interactive list of recent sessions
-// and returns the file path of the selected session
-func selectSessionInteractively() (string, error) {
+type sessionProgress interface {
+	Start()
+	Stop()
+}
+
+func newSessionLoadingProgress() sessionProgress {
+	return spinner.New(
+		spinner.CharSets[14],
+		100*time.Millisecond,
+		spinner.WithColor("cyan"),
+		spinner.WithSuffix("  Loading sessions..."),
+		spinner.WithWriterFile(os.Stderr),
+	)
+}
+
+func loadSessionsWithProgress(progress sessionProgress, load func() ([]adapters.Session, error)) ([]adapters.Session, error) {
+	progress.Start()
+	defer progress.Stop()
+	return load()
+}
+
+func loadRecentSessions() ([]adapters.Session, error) {
 	// Initialize Claude adapter
 	claudeAdapter, err := adapters.NewClaudeAdapter()
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize Claude adapter: %w", err)
+		return nil, fmt.Errorf("failed to initialize Claude adapter: %w", err)
 	}
 
 	// List recent sessions (fetch more to account for empty sessions being filtered out)
 	sessions, err := claudeAdapter.ListSessions("", 200)
 	if err != nil {
-		return "", fmt.Errorf("failed to list sessions: %w", err)
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
 	}
 
 	// Try to load Codex sessions (ignore errors to keep Claude flow working)
@@ -485,6 +505,17 @@ func selectSessionInteractively() (string, error) {
 		if copilotSessions, listErr := copilotAdapter.ListSessions("", 200); listErr == nil {
 			sessions = append(sessions, copilotSessions...)
 		}
+	}
+
+	return sessions, nil
+}
+
+// selectSessionInteractively displays an interactive list of recent sessions
+// and returns the file path of the selected session
+func selectSessionInteractively() (string, error) {
+	sessions, err := loadSessionsWithProgress(newSessionLoadingProgress(), loadRecentSessions)
+	if err != nil {
+		return "", err
 	}
 
 	if len(sessions) == 0 {

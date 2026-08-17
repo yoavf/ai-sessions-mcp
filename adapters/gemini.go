@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -299,12 +300,10 @@ func loadGeminiSession(filePath string) (*geminiSession, error) {
 		}
 	}
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
+	processRecord := func(line []byte) {
 		var record map[string]json.RawMessage
-		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			continue
+		if err := json.Unmarshal(line, &record); err != nil {
+			return
 		}
 
 		if value, ok := record["$rewindTo"]; ok {
@@ -318,7 +317,7 @@ func loadGeminiSession(filePath string) (*geminiSession, error) {
 					clear(messageIndex)
 				}
 			}
-			continue
+			return
 		}
 
 		if value, ok := record["$set"]; ok {
@@ -326,13 +325,13 @@ func loadGeminiSession(filePath string) (*geminiSession, error) {
 			if json.Unmarshal(value, &update) == nil {
 				applyMetadata(update)
 			}
-			continue
+			return
 		}
 
 		if _, hasID := record["id"]; hasID {
 			if _, hasType := record["type"]; hasType {
 				var message geminiMessage
-				if json.Unmarshal(scanner.Bytes(), &message) == nil {
+				if json.Unmarshal(line, &message) == nil {
 					if index, found := messageIndex[message.ID]; found {
 						session.Messages[index] = message
 					} else {
@@ -340,14 +339,25 @@ func loadGeminiSession(filePath string) (*geminiSession, error) {
 						session.Messages = append(session.Messages, message)
 					}
 				}
-				continue
+				return
 			}
 		}
 
 		applyMetadata(record)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to parse session JSONL: %w", err)
+
+	reader := bufio.NewReader(file)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			processRecord(line)
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to parse session JSONL: %w", readErr)
+		}
 	}
 	if session.SessionID == "" {
 		return nil, fmt.Errorf("failed to parse session JSONL: missing sessionId")

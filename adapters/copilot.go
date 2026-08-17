@@ -489,8 +489,11 @@ func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([
 	query = strings.ToLower(query)
 	var matches []Session
 
-	// Read each file once and search in a single pass
-	for _, filePath := range files {
+	// Determine recency with a lightweight pass over each session.start event,
+	// then scan full contents newest-first so a small limit bounds typical work.
+	orderedFiles := orderCopilotSessionFiles(files)
+	for _, candidate := range orderedFiles {
+		filePath := candidate.path
 		session, contents, err := c.parseSessionWithContents(filePath)
 		if err != nil {
 			continue
@@ -512,6 +515,9 @@ func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([
 
 		if found {
 			matches = append(matches, session)
+			if limit > 0 && len(matches) >= limit {
+				break
+			}
 		}
 	}
 
@@ -524,6 +530,58 @@ func (c *CopilotAdapter) SearchSessions(projectPath, query string, limit int) ([
 	}
 
 	return matches, nil
+}
+
+type copilotSessionFile struct {
+	path      string
+	timestamp time.Time
+}
+
+func orderCopilotSessionFiles(files []string) []copilotSessionFile {
+	ordered := make([]copilotSessionFile, 0, len(files))
+	for _, filePath := range files {
+		ordered = append(ordered, copilotSessionFile{
+			path:      filePath,
+			timestamp: copilotSessionStartTimestamp(filePath),
+		})
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].timestamp.After(ordered[j].timestamp)
+	})
+	return ordered
+}
+
+// copilotSessionStartTimestamp reads only until session.start, which is the
+// first event in current Copilot logs. Legacy logs without that event fall
+// back to file modification time.
+func copilotSessionStartTimestamp(filePath string) time.Time {
+	file, err := os.Open(filePath)
+	if err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			var event copilotEvent
+			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Type != "session.start" {
+				continue
+			}
+			var data copilotSessionStart
+			if json.Unmarshal(event.Data, &data) != nil {
+				break
+			}
+			if timestamp, err := time.Parse(time.RFC3339Nano, data.StartTime); err == nil {
+				return timestamp
+			}
+			if timestamp, err := time.Parse(time.RFC3339, data.StartTime); err == nil {
+				return timestamp
+			}
+			break
+		}
+	}
+	if stat, err := os.Stat(filePath); err == nil {
+		return stat.ModTime()
+	}
+	return time.Time{}
 }
 
 // parseSessionWithContents reads a session file and returns metadata plus all message contents.

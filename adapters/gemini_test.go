@@ -2,8 +2,10 @@ package adapters
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -178,5 +180,35 @@ func TestGeminiAdapterReadsCurrentJSONLRecordings(t *testing.T) {
 	}
 	if len(messages) != 2 || messages[1].Content != "Current answer" {
 		t.Fatalf("unexpected JSONL messages: %+v", messages)
+	}
+}
+
+func TestLoadGeminiSessionAcceptsJSONLRecordLargerThanTenMiB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session-large.jsonl")
+	largeContent := strings.Repeat("x", 10*1024*1024+1)
+	metadata := `{"sessionId":"large-session","projectHash":"hash","startTime":"2026-08-17T10:00:00Z"}`
+	message, err := json.Marshal(geminiMessage{
+		ID:      "large-message",
+		Type:    "user",
+		Content: largeContent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := append([]byte(metadata+"\n"), message...)
+	contents = append(contents, '\n')
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := loadGeminiSession(path)
+	if err != nil {
+		t.Fatalf("loadGeminiSession returned error: %v", err)
+	}
+	if len(session.Messages) != 1 {
+		t.Fatalf("expected one message, got %d", len(session.Messages))
+	}
+	if got := session.Messages[0].Content; got != largeContent {
+		t.Fatalf("large message content was not preserved: got %T with length %d", got, len(fmt.Sprint(got)))
 	}
 }

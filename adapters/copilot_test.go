@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCopilotAdapterReadsNestedSessionLayout(t *testing.T) {
@@ -72,5 +73,39 @@ func TestCopilotAdapterKeepsLegacyFlatLayout(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].ID != "legacy" {
 		t.Fatalf("unexpected legacy sessions: %+v", sessions)
+	}
+}
+
+func TestCopilotSearchLimitReturnsNewestMatch(t *testing.T) {
+	home := t.TempDir()
+	sessionsDir := filepath.Join(home, ".copilot", "session-state")
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeSession := func(name, sessionID, startTime string) {
+		t.Helper()
+		contents := `{"type":"session.start","data":{"sessionId":"` + sessionID + `","startTime":"` + startTime + `"}}` + "\n" +
+			`{"type":"user.message","data":{"content":"matching prompt"}}` + "\n"
+		if err := os.WriteFile(filepath.Join(sessionsDir, name+".jsonl"), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Lexical file order is intentionally the reverse of session recency.
+	writeSession("a-older", "older", "2026-08-16T10:00:00Z")
+	writeSession("z-newer", "newer", "2026-08-17T10:00:00Z")
+
+	adapter := &CopilotAdapter{homeDir: home}
+	matches, err := adapter.SearchSessions("", "matching", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].ID != "newer" {
+		t.Fatalf("expected newest matching session, got %+v", matches)
+	}
+	wantTimestamp := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
+	if !matches[0].Timestamp.Equal(wantTimestamp) {
+		t.Fatalf("timestamp = %v, want %v", matches[0].Timestamp, wantTimestamp)
 	}
 }
